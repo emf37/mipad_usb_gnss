@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<permissions>
+    <!-- Advertise GPS hardware so apps and Settings treat the tablet as a
+         GNSS-capable device once the external receiver HAL is registered. -->
+    <feature name="android.hardware.location.gps" />
+</permissions>

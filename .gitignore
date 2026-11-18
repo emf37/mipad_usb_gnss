@@ -1,0 +1,18 @@
+# build deps & artifacts
+deps/
+downloads/
+dist/
+hal/build*/
+bridge/build/
+
+# device logs & debug outputs
+*.log
+vlog*.txt
+survive.log
+gnss_usb_diagnose*.txt
+gnss_log_*.nmea
+stage*
+*.zip.idsig
+
+# local tooling
+.zcode/

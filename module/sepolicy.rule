@@ -1,0 +1,29 @@
+# gnss_usb — SELinux rules for the KSU-hosted GNSS HAL daemon.
+#
+# The daemon (bin/gnss_usb_hal) runs as root in the KSU su domain and
+# registers the AIDL binder service android.hardware.gnss.IGnss/default.
+# Iterate on device with: dmesg | grep avc  (see tools/diagnose.sh).
+
+# The framework (system_server, enforcing) binds our HAL and calls into it.
+allow system_server su:binder { call transfer }
+allow system_server su:fd use
+
+# Our daemon calls framework callbacks (IGnssCallback lives in system_server).
+# su is permissive under KSU, these are kept for KSU variants that keep it enforcing.
+allow su system_server:binder { call transfer }
+allow su system_server:fd use
+
+# Registering the service name. Devices without a stock GNSS HAL have no
+# service_contexts entry for it, so it lands on default_android_service.
+allow su default_android_service:service_manager { add find }
+
+# Raw usbfs access (/dev/bus/usb/... nodes are labeled usb_device) for the
+# CH340 userspace driver, plus sysfs idVendor/idProduct/descriptors reads.
+allow su usb_device:chr_file { open read write ioctl getattr }
+allow su sysfs:file { open read getattr }
+allow su sysfs:dir search
+
+# Framework-side: HyperOS location code polls a vendor_default_prop-labeled
+# property while handling GNSS callbacks (observed on Pad 7S Pro / A17).
+allow system_server vendor_default_prop:file { open read getattr map }
+allow system_server vendor_default_prop:property_service get

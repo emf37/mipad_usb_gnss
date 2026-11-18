@@ -1,0 +1,6 @@
+id=gnss_usb
+name=External USB GNSS (CH340) as built-in
+version=1.0.0
+versionCode=1
+author=ksu-gnss (port of aselafernando/gnss-aidl-serial)
+description=Registers a real AIDL GNSS HAL (android.hardware.gnss.IGnss/default) fed by an external CH340/CH341 USB NMEA receiver (usbfs userspace driver, no kernel ch341 needed; kernel tty and tcp://unix: socket sources also supported). System gets a genuine "gps" provider: satellite status in GPS apps, navigation in map apps. Config: persist.vendor.gnss_usb.* (see README).

@@ -1,0 +1,14 @@
+# gnss_usb_st — 与原 gnss_usb 模块相同的 SELinux 规则（持久root环境下生效）。
+allow system_server su:binder { call transfer }
+allow system_server su:fd use
+allow su system_server:binder { call transfer }
+allow su system_server:fd use
+allow su default_android_service:service_manager { add find }
+allow su usb_device:chr_file { open read write ioctl getattr }
+allow su sysfs:file { open read getattr }
+allow su sysfs:dir search
+
+# Framework-side: HyperOS location code polls a vendor_default_prop-labeled
+# property while handling GNSS callbacks (observed on Pad 7S Pro / A17).
+allow system_server vendor_default_prop:file { open read getattr map }
+allow system_server vendor_default_prop:property_service get
