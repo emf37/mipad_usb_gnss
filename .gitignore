@@ -16,3 +16,4 @@ stage*
 
 # local tooling
 .zcode/
+.gh_token
