@@ -17,3 +17,8 @@ stage*
 # local tooling
 .zcode/
 .gh_token
+*.bin
+*.pdf
+atgm_*.txt
+bk166x.txt
+casic_protocol.txt
