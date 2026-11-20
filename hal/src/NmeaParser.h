@@ -102,7 +102,9 @@ class NmeaParser {
 
     // satellite bookkeeping
     std::vector<GnssSvInfo> mSvs;
-    int mUsedInFix[12] = {0};
+    // per-epoch used-in-fix set (PRN + constellation from GSA system id)
+    std::vector<int> mUsedPrns;
+    std::vector<GnssConstellationType> mUsedConsts;
 };
 
 }  // namespace aidl::android::hardware::gnss

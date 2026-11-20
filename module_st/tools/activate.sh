@@ -82,6 +82,20 @@ refresh_vintf_cache() {
 }
 
 soft_reboot() {
+    # 会话级软重启保护：实测同一开机会话内第二次 soft 会死机（机理未明，
+    # 冷启动后首次 soft 安全）。日常流程（开机→激活root→soft）每会话只有
+    # 一次，不受影响。开发调试需强制：setprop persist.vendor.gnss_usb.soft_force 1
+    local BOOT_ID=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+    local MARK="$DEST/soft_boot_id"
+    if [ "$(getprop persist.vendor.gnss_usb.soft_force)" != "1" ] && \
+       [ -f "$MARK" ] && [ "$(cat "$MARK" 2>/dev/null)" = "$BOOT_ID" ]; then
+        echo "[!] 本会话已执行过软重启——重复 soft 实测会导致死机，已拒绝。"
+        echo "    如需再跑：整机重启后激活root再来，或临时强制："
+        echo "    setprop persist.vendor.gnss_usb.soft_force 1 && sh $DEST/activate.sh soft"
+        exit 1
+    fi
+    echo "$BOOT_ID" > "$MARK"
+
     # VINTF缓存失效 + 干净软重启（源码考证版，替代已废弃的servicemanager重启）：
     #  - libvintf 在每个进程内的 manifest 缓存以 /apex/apex-info.xml 的 mtime 为
     #    失效键（system/libvintf Apex.cpp GetModifiedTime + VintfObject.cpp Get()）。

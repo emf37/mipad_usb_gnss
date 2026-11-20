@@ -193,7 +193,8 @@ void NmeaParser::reset() {
     mHaveGsa = false;
     mFix = GnssLocation{};
     mSvs.clear();
-    memset(mUsedInFix, 0, sizeof(mUsedInFix));
+    mUsedPrns.clear();
+    mUsedConsts.clear();
 }
 
 void NmeaParser::addBytes(const char* data, size_t len) {
@@ -281,10 +282,26 @@ void NmeaParser::parseSentence() {
                 mFix.horizontalAccuracyMeters = acc;
             }
         }
-        // svids 3..14 used in fix
-        for (int i = 0; i < 12; i++) {
-            Token t = tzer.get(3 + i);
-            mUsedInFix[i] = t.empty() ? 0 : str2int(t.p, t.end);
+        // Dual-constellation receivers send one GSA per system each epoch;
+        // later ones (often mode=1 with empty lists for unused systems) must
+        // not wipe earlier ones' used satellites. Accumulate per epoch with
+        // the trailing GNSS system id (ATGM: 1=GPS 2=GLONASS 4=BDS) so
+        // GSV marking can match constellation-aware.
+        if (mode >= 2) {
+            int sysId = str2int(tzer.get(18).p, tzer.get(18).end);
+            GnssConstellationType gsaConst = GnssConstellationType::UNKNOWN;
+            if (sysId == 1) gsaConst = GnssConstellationType::GPS;
+            else if (sysId == 2) gsaConst = GnssConstellationType::GLONASS;
+            else if (sysId == 4) gsaConst = GnssConstellationType::BEIDOU;
+            else if (sysId == 8) gsaConst = GnssConstellationType::GALILEO;
+            for (int i = 0; i < 12; i++) {
+                Token t = tzer.get(3 + i);
+                if (t.empty()) continue;
+                int prn = str2int(t.p, t.end);
+                if (prn <= 0) continue;
+                mUsedPrns.push_back(prn);
+                mUsedConsts.push_back(gsaConst);
+            }
         }
         mHaveGsa = true;
         sendFix = true;
@@ -294,17 +311,17 @@ void NmeaParser::parseSentence() {
         int msgNumber = str2int(tzer.get(2).p, tzer.get(2).end);
         int svsInView = str2int(tzer.get(3).p, tzer.get(3).end);
 
-        // Parse the optional trailing NMEA 4.10 signalId: it sits after the
-        // last satellite group actually present in this sentence.
-        int groups = 0;
-        for (int i = 0; i < 4; i++) {
-            if (!tzer.get(4 + i * 4).empty()) groups++;
-        }
-        int signalId = str2int(tzer.get(4 + groups * 4).p, tzer.get(4 + groups * 4).end);
+        // Groups in THIS message follow from the burst arithmetic: a burst of
+        // numSv satellites carries min(4, numSv-(msgNo-1)*4) here. Deriving
+        // groups from non-empty-field counting misreads the trailing NMEA 4.10
+        // signalId as a phantom PRN on short messages (observed: ATGM's
+        // "...,42,37,309,29,1*4C" -> satellite "PRN 1" leaking into a
+        // carrier-0 bucket that is never erased -> list grows to the cap).
+        int expected = svsInView - (msgNumber - 1) * 4;
+        if (expected < 0) expected = 0;
+        if (expected > 4) expected = 4;
+        int signalId = str2int(tzer.get(4 + expected * 4).p, tzer.get(4 + expected * 4).end);
         int64_t carrierHz = carrierForSignalId(constellation, signalId);
-        // Band key for aggregation: distinct signalId values (incl. 0) are
-        // treated as distinct bands so dual-frequency bursts coexist.
-        int bandKey = signalId;
 
         if (msgNumber == 1) {
             // Start of a (constellation, band) burst: drop previous entries for
@@ -318,9 +335,8 @@ void NmeaParser::parseSentence() {
                                       }),
                        mSvs.end());
         }
-        (void)bandKey;
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < expected; i++) {
             int base = 4 + i * 4;
             Token tokPrn = tzer.get(base);
             if (tokPrn.empty()) continue;
@@ -344,9 +360,12 @@ void NmeaParser::parseSentence() {
             } else {
                 sv.carrierFrequencyHz = 0;
             }
-            for (int u = 0; u < 12; u++) {
-                if (mUsedInFix[u] == prn) {
+            for (size_t u = 0; u < mUsedPrns.size(); u++) {
+                if (mUsedPrns[u] != prn) continue;
+                if (mUsedConsts[u] == GnssConstellationType::UNKNOWN ||
+                    mUsedConsts[u] == constellation) {
                     sv.svFlag |= (int)IGnssCallback::GnssSvFlags::USED_IN_FIX;
+                    break;
                 }
             }
             if ((int)mSvs.size() < kMaxSvs) mSvs.push_back(sv);
@@ -481,10 +500,14 @@ void NmeaParser::parseSentence() {
     }
 
     // RMC opens a new epoch: flush last epoch's completed satellite list
-    // exactly once (smooth 1Hz sky view).
-    if (!memcmp(type, "RMC", 3) && mSvsDirty && mSvStatusCb) {
-        mSvStatusCb(mSvs);
-        mSvsDirty = false;
+    // exactly once (smooth 1Hz sky view) and reset the per-epoch used set.
+    if (!memcmp(type, "RMC", 3)) {
+        mUsedPrns.clear();
+        mUsedConsts.clear();
+        if (mSvsDirty && mSvStatusCb) {
+            mSvStatusCb(mSvs);
+            mSvsDirty = false;
+        }
     }
 
     if (sendFix && (mFix.gnssLocationFlags & GnssLocation::HAS_LAT_LONG) && mLocationCb) {
