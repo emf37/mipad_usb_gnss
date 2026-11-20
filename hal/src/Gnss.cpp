@@ -148,6 +148,7 @@ ScopedAStatus Gnss::start() {
 
     reportStatus(IGnssCallback::GnssStatusValue::SESSION_BEGIN);
     sendUbxRate(mFixIntervalMs);
+    sendAidIni();  // warm-start seed (framework may have injected time/pos before start)
     ALOGI("session started, fix interval %u ms", mFixIntervalMs.load());
     return ScopedAStatus::ok();
 }
@@ -410,15 +411,62 @@ ScopedAStatus Gnss::stopNmea() {
     return ScopedAStatus::ok();
 }
 
-// ---- assistance injection (no-ops for a bare serial receiver) ---------------
+// ---- assistance injection: CASIC AID-INI (time+position warm start) --------
 
-ScopedAStatus Gnss::injectTime(int64_t, int64_t, int) {
+namespace {
+// GPS epoch 1980-01-06, week = floor(days/7), tow = secs within week.
+void gpsWeekTowFromUnix(int64_t unixMs, uint16_t* week, double* tow) {
+    constexpr int64_t kEpochSec = 315964800;                  // 1980-01-06 UTC
+    constexpr int64_t kWeekSec = 7 * 86400;
+    constexpr int64_t kLeapOffset = 18;                       // GPS-UTC (2020s)
+    int64_t gpsSec = (unixMs / 1000) - kEpochSec + kLeapOffset;
+    if (gpsSec < 0) gpsSec = 0;
+    *week = (uint16_t)((gpsSec / kWeekSec) & 0xFFFF);
+    *tow = (double)(gpsSec % kWeekSec);
+}
+}  // namespace
+
+void Gnss::sendAidIni() {
+    if (!mAidIni.hasPos && !mAidIni.hasTime) return;
+    if (!propOn("agnss_ini", "1")) return;  // kill switch
+
+    std::vector<uint8_t> frame = buildAidIni(mAidIni);
+    std::lock_guard<std::mutex> lock(mTransportMutex);
+    if (mTransport != nullptr) {
+        mTransport->write((const char*)frame.data(), frame.size());
+        ALOGI("AID-INI injected (pos=%d time=%d wk=%u tow=%.1f)", mAidIni.hasPos,
+              mAidIni.hasTime, mAidIni.gpsWeek, mAidIni.towSec);
+    }
+}
+
+ScopedAStatus Gnss::injectTime(int64_t timeMs, int64_t, int) {
+    // Framework pushes network time before requesting GNSS — feeds warm start.
+    if (timeMs > 1700000000000LL) {  // sanity: after 2023-11
+        gpsWeekTowFromUnix(timeMs, &mAidIni.gpsWeek, &mAidIni.towSec);
+        mAidIni.hasTime = true;
+        ALOGI("injectTime accepted -> GPS wk=%u tow=%.1f", mAidIni.gpsWeek, mAidIni.towSec);
+        sendAidIni();
+    }
     return ScopedAStatus::ok();
 }
 ScopedAStatus Gnss::injectLocation(const GnssLocation&) {
     return ScopedAStatus::ok();
 }
-ScopedAStatus Gnss::injectBestLocation(const GnssLocation&) {
+ScopedAStatus Gnss::injectBestLocation(const GnssLocation& location) {
+    // Framework pushes fused last-known position — coarse seed for warm start.
+    if ((location.gnssLocationFlags & GnssLocation::HAS_LAT_LONG) &&
+        location.horizontalAccuracyMeters > 0) {
+        mAidIni.latDeg = location.latitudeDegrees;
+        mAidIni.lonDeg = location.longitudeDegrees;
+        mAidIni.altM = (location.gnssLocationFlags & GnssLocation::HAS_ALTITUDE)
+                       ? location.altitudeMeters : 0;
+        double acc = location.horizontalAccuracyMeters;
+        mAidIni.posAccM2 = acc * acc * 4;  // ~2σ variance
+        mAidIni.hasPos = true;
+        ALOGI("injectBestLocation accepted (%.3f,%.3f acc=%.0fm)", mAidIni.latDeg,
+              mAidIni.lonDeg, acc);
+        sendAidIni();
+    }
     return ScopedAStatus::ok();
 }
 ScopedAStatus Gnss::deleteAidingData(IGnss::GnssAidingData) {

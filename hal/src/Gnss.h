@@ -22,6 +22,7 @@
 #include <thread>
 
 #include "ControlServer.h"
+#include "CasicFrames.h"
 #include "NmeaParser.h"
 #include "Transport.h"
 
@@ -91,6 +92,7 @@ class Gnss : public BnGnss {
     void sendUbxRate(unsigned short periodMs);
     bool sendRawCommand(const std::string& payload);   // control server hook
     std::string statusJson();                          // control server hook
+    void sendAidIni();                                 // CASIC warm-start injection
 
     void reportLocation(const GnssLocation& location);
     void reportSvStatus(const std::vector<IGnssCallback::GnssSvInfo>& svList);
@@ -129,6 +131,9 @@ class Gnss : public BnGnss {
 
     std::shared_ptr<IGnssConfiguration> mGnssConfiguration;
     std::shared_ptr<IGnssPowerIndication> mGnssPowerIndication;
+
+    // CASIC AID-INI warm-start assistance (framework injectTime/injectBestLocation)
+    AidIniData mAidIni;
 };
 
 }  // namespace aidl::android::hardware::gnss
