@@ -11,7 +11,7 @@ mkdir -p "$STANDALONE/bin" || abort "! cannot create $STANDALONE"
 
 cp -f "$MODPATH/bin/gnss_usb_hal" "$STANDALONE/bin/gnss_usb_hal"
 chmod 755 "$STANDALONE/bin/gnss_usb_hal"
-for f in activate.sh diagnose.sh inject_feature.sh clear_rescue.sh; do
+for f in activate.sh diagnose.sh inject_feature.sh clear_rescue.sh suspend_test.sh; do
     [ -f "$MODPATH/tools/$f" ] && cp -f "$MODPATH/tools/$f" "$STANDALONE/$f"
 done
 chmod 755 "$STANDALONE"/*.sh 2>/dev/null

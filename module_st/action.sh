@@ -10,7 +10,7 @@ BIN="$STANDALONE/bin/gnss_usb_hal"
 
 # 同步工具脚本
 MODDIR="${0%/*}"
-for f in activate.sh diagnose.sh inject_feature.sh clear_rescue.sh; do
+for f in activate.sh diagnose.sh inject_feature.sh clear_rescue.sh suspend_test.sh; do
     [ -f "$MODDIR/tools/$f" ] && cp -f "$MODDIR/tools/$f" "$STANDALONE/$f"
 done
 chmod 755 "$STANDALONE"/*.sh 2>/dev/null

@@ -43,9 +43,22 @@
 | `baud` | `115200` | `auto` 自动探测；实测 ATGM336H/双频模组 115200 |
 | `tty_dev` | 空 | tty模式显式节点名 |
 | `socket_addr` | `tcp://127.0.0.1:5000` | socket源地址（配 GnssBtBridge 蓝牙SPP） |
-| `max_rate` | `1000` | 定位周期ms（透传App请求，100ms~65s；u-blox会下发CFG-RATE） |
+| `max_rate` | `1000` | 定位周期ms（透传App请求，100ms~65s） |
 | `cb_*` | 全开 | 回调分级开关（caps/sysinfo/loc/sv/nmea/loc_min），应急降级用 |
 | `log` | `0` | `1`=记录原始NMEA到logcat（tag `gnss_usb`） |
+
+## 双频显示与模组控制（v1.1+）
+
+- **L1/L5 分行显示**：解析 NMEA 4.10 GSV 尾部 signalId，按频段映射载波频率（GPS L1/L2/L5、BDS B1I/B2I/B2a/B1C/B3I、Galileo E1/E5a/E5b/E6、GLONASS G1/G2、QZSS、NavIC），GPS Test 可见同星双频各行
+- **守护进程控制口**：`127.0.0.1:5001`（`STATUS` / `SEND <命令>` / `SUB` 实时NMEA推送），App与adb皆可使用：
+  ```
+  adb shell su -c '(printf "STATUS\n"; sleep 1) | nc 127.0.0.1 5001'
+  ```
+- **GnssBtBridge v1.1 模组控制页**：双模组切换
+  - 中科微 ATGM/CASIC：1/2/5/10Hz、星座选择、冷/热启动、版本查询、FLASH保存（自动计算异或校验和）
+  - 博通 BK166X：1/5/10/20Hz（`$POLCFGNAV`）、双频/单频频点掩码（`$POLCFGSYS`）、冷/热启、配置保存（响应 `$OK/$FAIL` 实时回显）
+  - 实时状态栏：传输源/会话/卫星数(在用)/fix/精度/坐标 + NMEA与指令回显日志
+- **息屏供电测试**：`tools/suspend_test.sh <分钟>`（判读OTG休眠供电与fix恢复时间）
 
 ## 构建复现（Windows + Git Bash，经代理）
 
