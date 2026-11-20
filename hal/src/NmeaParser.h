@@ -94,6 +94,9 @@ class NmeaParser {
     // week-number rollover correction reported once per session
     bool mRolloverLogged = false;
 
+    // SV list has new data this epoch; flushed to the framework once, on RMC
+    bool mSvsDirty = false;
+
     // fix accumulated across the sentences of one reporting cycle
     GnssLocation mFix;
 

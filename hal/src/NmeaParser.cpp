@@ -352,12 +352,14 @@ void NmeaParser::parseSentence() {
             if ((int)mSvs.size() < kMaxSvs) mSvs.push_back(sv);
         }
 
-        // Emit once the last message of each (constellation, band) burst
-        // arrives so the framework gets incremental SV updates.
-        if (numMessages == msgNumber && mSvStatusCb) {
-            mSvStatusCb(mSvs);
-        }
+        // Mark dirty; flushed once per NMEA epoch (on RMC/GGA, which arrive
+        // before this epoch's GSV burst). Emitting per-burst caused the
+        // framework sky view to flicker with partially-stale lists several
+        // times per second.
+        mSvsDirty = true;
         (void)svsInView;
+        (void)numMessages;
+        (void)msgNumber;
     } else if (!memcmp(type, "RMC", 3)) {
         Token tokTime = tzer.get(1);
         Token tokStatus = tzer.get(2);  // A=valid, V=warning
@@ -386,23 +388,48 @@ void NmeaParser::parseSentence() {
                 tm.tm_isdst = -1;
                 time_t gmt = timegm(&tm);
 
-                // GPS week-number rollover correction. Receivers with a
-                // 10-bit week counter and old firmware (e.g. SiRF III /
-                // GlobalSat BU-353) report dates exactly N*1024 weeks in the
-                // past. Any date before this floor cannot be genuine — shift
-                // forward in whole rollover periods until plausible. Must
-                // happen before the time_sync clock steering below.
-                constexpr time_t kRolloverPeriodSec = 1024LL * 7 * 24 * 3600;
-                constexpr time_t kPlausibleFloorSec = 1735689600;  // 2025-01-01T00:00:00Z
-                if (gmt > 0 && gmt < kPlausibleFloorSec) {
-                    time_t corrected = gmt;
-                    while (corrected < kPlausibleFloorSec) corrected += kRolloverPeriodSec;
-                    if (!mRolloverLogged) {
-                        ALOGI("GPS week rollover: receiver date %ld shifted to %ld",
-                              (long)gmt, (long)corrected);
-                        mRolloverLogged = true;
+                // Module-time sanity: some receivers ship a stale RTC epoch
+                // (observed: ATGM336H reporting 2020-11-26 while fixed, dead
+                // backup battery / firmware epoch bug) or a legacy 10-bit GPS
+                // week counter (SiRF era, off by exact N*1024 weeks). Any of
+                // those produces timestamps years away from the system clock,
+                // which apps reject ("No Fix"). Trust the system clock when
+                // the receiver date is off by more than 90 days; otherwise
+                // apply the classic 1024-week rollover shift if it lands
+                // within a year of the system clock.
+                if (gmt > 0) {
+                    time_t sysNow = time(nullptr);
+                    time_t delta = gmt - sysNow;
+                    if (delta < 0) delta = -delta;
+                    constexpr time_t k90Days = 90LL * 24 * 3600;
+                    constexpr time_t kRolloverPeriodSec = 1024LL * 7 * 24 * 3600;
+                    if (delta > k90Days) {
+                        // try rollover correction first (only if it helps)
+                        time_t corrected = gmt;
+                        if (corrected < sysNow) {
+                            while (corrected < sysNow - k90Days) corrected += kRolloverPeriodSec;
+                        }
+                        time_t delta2 = corrected - sysNow;
+                        if (delta2 < 0) delta2 = -delta2;
+                        if (delta2 <= k90Days) {
+                            gmt = corrected;
+                            if (!mRolloverLogged) {
+                                ALOGI("GPS week rollover: %ld -> %ld", (long)gmt,
+                                      (long)corrected);
+                                mRolloverLogged = true;
+                            }
+                        } else {
+                            // unfixable stale RTC (e.g. 2020 epoch): fall back
+                            // to the system clock for the location timestamp
+                            if (!mRolloverLogged) {
+                                ALOGI("receiver date implausible (%ld, sys %ld): "
+                                      "using system clock",
+                                      (long)gmt, (long)sysNow);
+                                mRolloverLogged = true;
+                            }
+                            gmt = sysNow;
+                        }
                     }
-                    gmt = corrected;
                 }
 
                 mFix.timestampMillis = (int64_t)gmt * 1000;
@@ -451,6 +478,13 @@ void NmeaParser::parseSentence() {
                         str2float(tokSpeed.p, tokSpeed.end) * (1.852 / 3.6);
             }
         }
+    }
+
+    // RMC opens a new epoch: flush last epoch's completed satellite list
+    // exactly once (smooth 1Hz sky view).
+    if (!memcmp(type, "RMC", 3) && mSvsDirty && mSvStatusCb) {
+        mSvStatusCb(mSvs);
+        mSvsDirty = false;
     }
 
     if (sendFix && (mFix.gnssLocationFlags & GnssLocation::HAS_LAT_LONG) && mLocationCb) {

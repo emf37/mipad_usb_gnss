@@ -321,6 +321,14 @@ void Gnss::reportLocation(const GnssLocation& locationIn) {
         mLastAcc = locationIn.horizontalAccuracyMeters;
         mFixType = (locationIn.gnssLocationFlags & GnssLocation::HAS_LAT_LONG) ? 3 : 0;
     }
+    // 节流日志：每10个fix打一行，上机验证交付链
+    static std::atomic<int> sFixCount{0};
+    int n = ++sFixCount;
+    if (n % 10 == 1) {
+        ALOGI("fix #%d: %.6f,%.6f acc=%.1fm ts=%lld", n, locationIn.latitudeDegrees,
+              locationIn.longitudeDegrees, locationIn.horizontalAccuracyMeters,
+              (long long)locationIn.timestampMillis);
+    }
     if (!propOn("cb_loc", "1")) return;
     std::lock_guard<std::mutex> lock(mCallbackMutex);
     if (!mCallback) return;
