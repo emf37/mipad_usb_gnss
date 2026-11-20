@@ -30,6 +30,13 @@ stop_all() {
 }
 
 start_daemon() {
+    # 守护存活保护：框架持有 binder 时杀守护会触发 HyperOS android.fg 死锁
+    # → Watchdog 预杀死机（dropbox 实证 system_server_pre_watchdog）。
+    # 已注册且健康 → 不重启，直接返回。
+    if timeout 10 service list 2>/dev/null | grep -q "android.hardware.gnss.IGnss"; then
+        echo "[i] 守护进程已在运行且服务已注册——跳过重启（避免fg死锁）"
+        return 0
+    fi
     stop_all
     pkill -f gnss_usb_hal 2>/dev/null
     sleep 1
