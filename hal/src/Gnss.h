@@ -23,6 +23,7 @@
 
 #include "ControlServer.h"
 #include "CasicFrames.h"
+#include "GnssPsds.h"
 #include "NmeaParser.h"
 #include "Transport.h"
 
@@ -74,7 +75,7 @@ class Gnss : public BnGnss {
     ndk::ScopedAStatus getExtensionGnssAntennaInfo(
             std::shared_ptr<IGnssAntennaInfo>* out) override;
 
-    // Nullable extensions — not supported by a serial NMEA receiver.
+    // PSDS/AGNSS injection via framework channel (validated, CASIC-only)
     ndk::ScopedAStatus getExtensionPsds(std::shared_ptr<IGnssPsds>* out) override;
     ndk::ScopedAStatus getExtensionGnssBatching(
             std::shared_ptr<IGnssBatching>* out) override;
@@ -131,6 +132,7 @@ class Gnss : public BnGnss {
 
     std::shared_ptr<IGnssConfiguration> mGnssConfiguration;
     std::shared_ptr<IGnssPowerIndication> mGnssPowerIndication;
+    std::shared_ptr<GnssPsds> mGnssPsds;
 
     // CASIC AID-INI warm-start assistance (framework injectTime/injectBestLocation)
     AidIniData mAidIni;

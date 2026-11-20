@@ -49,6 +49,12 @@ void sleepMs(int ms) {
 Gnss::Gnss() {
     mGnssConfiguration = ndk::SharedRefBase::make<GnssConfiguration>();
     mGnssPowerIndication = ndk::SharedRefBase::make<GnssPowerIndication>();
+    mGnssPsds = ndk::SharedRefBase::make<GnssPsds>(
+            [this](const uint8_t* data, size_t len) -> bool {
+                std::lock_guard<std::mutex> lock(mTransportMutex);
+                if (mTransport == nullptr) return false;
+                return mTransport->write((const char*)data, len) == (ssize_t)len;
+            });
 
     // Companion-app control server (127.0.0.1:5001): status / raw send / live NMEA
     mControl = std::make_unique<ControlServer>(
@@ -268,7 +274,12 @@ void Gnss::sendUbxRate(unsigned short periodMs) {
 bool Gnss::sendRawCommand(const std::string& payload) {
     std::lock_guard<std::mutex> lock(mTransportMutex);
     if (mTransport == nullptr) return false;
-    std::string frame = payload + "\r\n";
+    // NMEA text commands need CRLF; CASIC binary frames (0xBACE sync) must NOT
+    // have it appended — the checksum covers exactly len+class+id+payload.
+    bool isBinary = payload.size() >= 2 &&
+                    (unsigned char)payload[0] == 0xBA &&
+                    (unsigned char)payload[1] == 0xCE;
+    std::string frame = isBinary ? payload : payload + "\r\n";
     return mTransport->write(frame.data(), frame.size()) == (ssize_t)frame.size();
 }
 
@@ -524,8 +535,8 @@ ScopedAStatus Gnss::getExtensionGnssAntennaInfo(std::shared_ptr<IGnssAntennaInfo
 // gnss-aidl-serial note, seen with IGnssPsds during GnssNative init). A
 // non-OK status makes the framework treat the extension as absent.
 ScopedAStatus Gnss::getExtensionPsds(std::shared_ptr<IGnssPsds>* out) {
-    *out = nullptr;
-    return ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+    *out = mGnssPsds;
+    return ScopedAStatus::ok();
 }
 ScopedAStatus Gnss::getExtensionGnssBatching(std::shared_ptr<IGnssBatching>* out) {
     *out = nullptr;

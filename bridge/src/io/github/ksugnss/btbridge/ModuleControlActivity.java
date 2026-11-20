@@ -200,6 +200,10 @@ public class ModuleControlActivity extends Activity implements ControlLink.Liste
         parent.addView(r);
     }
 
+    // ---- AGNSS: framework channel (自动，无需手动操作) ----
+    // 框架会在 GNSS 会话开始时自动下载 PSDS 数据并调 injectPsdsData
+    // 状态和日志通过控制口 SUB 流在 onLine 中实时显示
+
     private void buildAtgm() {
         pair(cmdArea, "1Hz", "$PCAS02,1000", "2Hz", "$PCAS02,500");
         pair(cmdArea, "5Hz", "$PCAS02,200", "10Hz", "$PCAS02,100");

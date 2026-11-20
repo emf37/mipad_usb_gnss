@@ -87,6 +87,13 @@ public class ControlLink {
         return send("SEND " + cmd);
     }
 
+    /** Send raw binary data (hex-encoded) — no CRLF for CASIC frames. */
+    public boolean sendBinary(byte[] data) {
+        StringBuilder sb = new StringBuilder(data.length * 2);
+        for (byte b : data) sb.append(String.format("%02x", b & 0xFF));
+        return send("SENDBIN " + sb);
+    }
+
     public void close() {
         running.set(false);
         try { if (socket != null) socket.close(); } catch (Exception ignored) {}

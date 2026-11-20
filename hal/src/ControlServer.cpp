@@ -16,6 +16,15 @@
 
 namespace aidl::android::hardware::gnss {
 
+namespace {
+int hexChar(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+}  // namespace
+
 void ControlServer::start(int port) {
     if (mRunning.exchange(true)) return;
 
@@ -94,6 +103,23 @@ void ControlServer::clientLoop(int fd) {
                 std::string payload = line.substr(5);
                 bool ok = mSend ? mSend(payload) : false;
                 std::string r = ok ? "OK\n" : "ERR\n";
+                if (::send(fd, r.data(), r.size(), MSG_NOSIGNAL) < 0) open = false;
+            } else if (line.rfind("SENDBIN ", 0) == 0) {
+                // hex-encoded binary write (AGNSS frames, CASIC payloads etc.)
+                std::string hex = line.substr(8);
+                std::string bin;
+                bin.reserve(hex.size() / 2);
+                for (size_t i = 0; i + 1 < hex.size(); i += 2) {
+                    int hi = hexChar(hex[i]);
+                    int lo = hexChar(hex[i + 1]);
+                    if (hi < 0 || lo < 0) {
+                        bin.clear();
+                        break;
+                    }
+                    bin.push_back((char)((hi << 4) | lo));
+                }
+                bool ok = !bin.empty() && mSend ? mSend(bin) : false;
+                std::string r = ok ? "OK " + std::to_string(bin.size()) + "B\n" : "ERR\n";
                 if (::send(fd, r.data(), r.size(), MSG_NOSIGNAL) < 0) open = false;
             } else if (line == "SUB") {
                 subscribed = true;
