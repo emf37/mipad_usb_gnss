@@ -26,6 +26,7 @@
 #include <cutils/properties.h>
 #include <log/log.h>
 
+#include <cstdio>
 #include <unistd.h>
 
 namespace aidl::android::hardware::gnss {
@@ -48,6 +49,12 @@ void sleepMs(int ms) {
 Gnss::Gnss() {
     mGnssConfiguration = ndk::SharedRefBase::make<GnssConfiguration>();
     mGnssPowerIndication = ndk::SharedRefBase::make<GnssPowerIndication>();
+
+    // Companion-app control server (127.0.0.1:5001): status / raw send / live NMEA
+    mControl = std::make_unique<ControlServer>(
+            [this]() -> std::string { return statusJson(); },
+            [this](const std::string& p) -> bool { return sendRawCommand(p); });
+    mControl->start(5001);
 
     // Wire the parser's outputs to the AIDL callbacks.
     mParser.setLocationCallback([this](const GnssLocation& loc) { reportLocation(loc); });
@@ -254,6 +261,46 @@ void Gnss::sendUbxRate(unsigned short periodMs) {
     }
 }
 
+// ---- control server hooks ----------------------------------------------------
+
+// Write a raw module command (text) + CRLF through the live transport.
+bool Gnss::sendRawCommand(const std::string& payload) {
+    std::lock_guard<std::mutex> lock(mTransportMutex);
+    if (mTransport == nullptr) return false;
+    std::string frame = payload + "\r\n";
+    return mTransport->write(frame.data(), frame.size()) == (ssize_t)frame.size();
+}
+
+std::string Gnss::statusJson() {
+    std::string transport, nmea;
+    int sats = 0, used = 0, fix = 0, session = 0;
+    double lat = 0, lon = 0;
+    float acc = 0;
+    {
+        std::lock_guard<std::mutex> lock(mTransportMutex);
+        transport = mTransportName;
+    }
+    {
+        std::lock_guard<std::mutex> lock(mStatusMutex);
+        sats = mSatCount;
+        used = mSatsUsed;
+        fix = mFixType;
+        lat = mLastLat;
+        lon = mLastLon;
+        acc = mLastAcc;
+        nmea = mLastNmea;
+    }
+    session = mSessionActive ? 1 : 0;
+
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+             "{\"transport\":\"%.64s\",\"session\":%d,\"sats\":%d,\"used\":%d,"
+             "\"fix\":%d,\"lat\":%.7f,\"lon\":%.7f,\"acc\":%.1f}",
+             transport.c_str(), session, sats, used, fix, lat, lon, acc);
+    (void)nmea;  // last line available via SUB stream
+    return buf;
+}
+
 // ---- report helpers ---------------------------------------------------------
 
 namespace {
@@ -266,6 +313,14 @@ bool propOn(const char* key, const char* def) {
 }  // namespace
 
 void Gnss::reportLocation(const GnssLocation& locationIn) {
+    // live snapshot for the control server (regardless of callback gates)
+    {
+        std::lock_guard<std::mutex> lock(mStatusMutex);
+        mLastLat = locationIn.latitudeDegrees;
+        mLastLon = locationIn.longitudeDegrees;
+        mLastAcc = locationIn.horizontalAccuracyMeters;
+        mFixType = (locationIn.gnssLocationFlags & GnssLocation::HAS_LAT_LONG) ? 3 : 0;
+    }
     if (!propOn("cb_loc", "1")) return;
     std::lock_guard<std::mutex> lock(mCallbackMutex);
     if (!mCallback) return;
@@ -286,6 +341,14 @@ void Gnss::reportLocation(const GnssLocation& locationIn) {
 }
 
 void Gnss::reportSvStatus(const std::vector<IGnssCallback::GnssSvInfo>& svList) {
+    {
+        std::lock_guard<std::mutex> lock(mStatusMutex);
+        mSatCount = (int)svList.size();
+        mSatsUsed = 0;
+        for (const auto& sv : svList) {
+            if (sv.svFlag & (int)IGnssCallback::GnssSvFlags::USED_IN_FIX) mSatsUsed++;
+        }
+    }
     // 框架的 startSvStatus/stopSvStatus 开关 + 属性总闸（默认开：实测全级稳定）
     if (!mSvStatusEnabled) return;
     if (!propOn("cb_sv", "1")) return;
@@ -294,6 +357,11 @@ void Gnss::reportSvStatus(const std::vector<IGnssCallback::GnssSvInfo>& svList) 
 }
 
 void Gnss::reportNmea(int64_t timestampMs, const std::string& nmea) {
+    {
+        std::lock_guard<std::mutex> lock(mStatusMutex);
+        mLastNmea = nmea;
+    }
+    if (mControl) mControl->broadcastNmea(nmea);
     if (!mNmeaEnabled) return;
     if (!propOn("cb_nmea", "1")) return;
     std::lock_guard<std::mutex> lock(mCallbackMutex);

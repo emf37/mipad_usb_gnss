@@ -67,7 +67,7 @@ class NmeaParser {
 
   private:
     static constexpr int kMaxNmeaSize = 255;
-    static constexpr int kMaxSvs = 64;
+    static constexpr int kMaxSvs = 128;   // dual-frequency full-constellation can exceed 64
 
     void addChar(char c);
     void parseSentence();

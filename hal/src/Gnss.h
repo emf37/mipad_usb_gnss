@@ -21,6 +21,7 @@
 #include <mutex>
 #include <thread>
 
+#include "ControlServer.h"
 #include "NmeaParser.h"
 #include "Transport.h"
 
@@ -88,6 +89,8 @@ class Gnss : public BnGnss {
     void readerThreadLoop();
     void teardownTransport();
     void sendUbxRate(unsigned short periodMs);
+    bool sendRawCommand(const std::string& payload);   // control server hook
+    std::string statusJson();                          // control server hook
 
     void reportLocation(const GnssLocation& location);
     void reportSvStatus(const std::vector<IGnssCallback::GnssSvInfo>& svList);
@@ -103,6 +106,16 @@ class Gnss : public BnGnss {
     std::unique_ptr<Transport> mTransport;
     std::string mTransportName;
     bool mVerboseRaw = false;
+
+    // control server + live status snapshot
+    std::unique_ptr<ControlServer> mControl;
+    std::mutex mStatusMutex;
+    int mSatCount = 0;          // sv list size of last report
+    int mSatsUsed = 0;          // USED_IN_FIX count
+    int mFixType = 0;           // 0=none 1=2D 2=3D (from GGA)
+    double mLastLat = 0, mLastLon = 0;
+    float mLastAcc = 0;
+    std::string mLastNmea;
 
     NmeaParser mParser;
 

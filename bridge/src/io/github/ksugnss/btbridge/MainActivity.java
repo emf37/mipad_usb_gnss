@@ -45,6 +45,13 @@ public class MainActivity extends Activity {
         status.setPadding(0, 0, 0, pad);
         root.addView(status);
 
+        android.widget.Button ctl = new android.widget.Button(this);
+        ctl.setAllCaps(false);
+        ctl.setText("GNSS 模组控制 / 状态 »");
+        ctl.setOnClickListener(v ->
+                startActivity(new android.content.Intent(this, ModuleControlActivity.class)));
+        root.addView(ctl);
+
         ListView list = new ListView(this);
         adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, rows);
         list.setAdapter(adapter);

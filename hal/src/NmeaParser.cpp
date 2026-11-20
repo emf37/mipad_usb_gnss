@@ -123,6 +123,60 @@ int64_t bootTimeNanos() {
     return static_cast<int64_t>(ts.tv_sec) * 1000000000LL + ts.tv_nsec;
 }
 
+// NMEA 4.10 signal-id -> carrier frequency (Hz) per constellation.
+// Dual-frequency receivers (e.g. ATGM336H-5N, BK166X) emit one GSV burst per
+// band, distinguished by the trailing signalId field (0 = all/legacy single).
+// Returns 0 for unknown: caller keeps HAS_CARRIER_FREQUENCY off so entries
+// aggregate like the legacy single-band behavior.
+int64_t carrierForSignalId(GnssConstellationType c, int signalId) {
+    constexpr int64_t kL1 = 1575420000LL;   // GPS L1 / Galileo E1 / BDS B1C / QZSS L1
+    constexpr int64_t kL5 = 1176450000LL;   // GPS L5 / Galileo E5a / BDS B2a / QZSS L5 / NavIC L5
+    constexpr int64_t kL2 = 1227600000LL;   // GPS L2 / QZSS L2
+    constexpr int64_t kB1I = 1561098000LL;  // BDS B1I
+    constexpr int64_t kB2I = 1207140000LL;  // BDS B2I / Galileo E5b
+    constexpr int64_t kB3I = 1268520000LL;  // BDS B3I
+    constexpr int64_t kE6 = 1278750000LL;   // Galileo E6
+    constexpr int64_t kGloL1 = 1602000000LL;  // GLONASS L1 FDMA nominal (k=0)
+    constexpr int64_t kGloL2 = 1246000000LL;  // GLONASS L2 FDMA nominal (k=0)
+
+    if (signalId <= 0) return 0;
+    switch (c) {
+        case GnssConstellationType::GPS:
+        case GnssConstellationType::QZSS:
+            // 1 L1C/A | 2 L1P | 5 L2P | 6/7 L2C | 8/9 L5 | 10/11 L1C
+            if (signalId == 1 || signalId == 2 || signalId == 10 || signalId == 11) return kL1;
+            if (signalId == 5 || signalId == 6 || signalId == 7) return kL2;
+            if (signalId == 8 || signalId == 9) return kL5;
+            return 0;
+        case GnssConstellationType::GLONASS:
+            // 1/2 L1 | 3/4 L2
+            if (signalId == 1 || signalId == 2) return kGloL1;
+            if (signalId == 3 || signalId == 4) return kGloL2;
+            return 0;
+        case GnssConstellationType::GALILEO:
+            // 1/2 E5a | 3/4/5 E5b | 6 E6C | 7/8/9 E1
+            if (signalId == 1 || signalId == 2) return kL5;
+            if (signalId == 3 || signalId == 4 || signalId == 5) return kB2I;
+            if (signalId == 6) return kE6;
+            if (signalId == 7 || signalId == 8 || signalId == 9) return kL1;
+            return 0;
+        case GnssConstellationType::BEIDOU:
+            // 1/2/3 B1I | 4/5/6 B2I | 7 B3I | 8 B1C | 9 B2a
+            if (signalId >= 1 && signalId <= 3) return kB1I;
+            if (signalId == 4 || signalId == 5 || signalId == 6) return kB2I;
+            if (signalId == 7) return kB3I;
+            if (signalId == 8) return kL1;
+            if (signalId == 9) return kL5;
+            return 0;
+        case GnssConstellationType::IRNSS:
+            if (signalId == 1) return kL5;             // L5 SPS
+            if (signalId == 9) return 2492027500LL;    // S band
+            return 0;
+        default:
+            return 0;
+    }
+}
+
 void stampElapsedRealtime(GnssLocation* loc) {
     loc->elapsedRealtime.flags = ElapsedRealtime::HAS_TIMESTAMP_NS |
                                  ElapsedRealtime::HAS_TIME_UNCERTAINTY_NS;
@@ -240,14 +294,31 @@ void NmeaParser::parseSentence() {
         int msgNumber = str2int(tzer.get(2).p, tzer.get(2).end);
         int svsInView = str2int(tzer.get(3).p, tzer.get(3).end);
 
+        // Parse the optional trailing NMEA 4.10 signalId: it sits after the
+        // last satellite group actually present in this sentence.
+        int groups = 0;
+        for (int i = 0; i < 4; i++) {
+            if (!tzer.get(4 + i * 4).empty()) groups++;
+        }
+        int signalId = str2int(tzer.get(4 + groups * 4).p, tzer.get(4 + groups * 4).end);
+        int64_t carrierHz = carrierForSignalId(constellation, signalId);
+        // Band key for aggregation: distinct signalId values (incl. 0) are
+        // treated as distinct bands so dual-frequency bursts coexist.
+        int bandKey = signalId;
+
         if (msgNumber == 1) {
-            // start of a constellation burst: drop previous entries for it
+            // Start of a (constellation, band) burst: drop previous entries for
+            // that same constellation+carrier only. carrier==0 entries form the
+            // single legacy "unknown band" bucket, preserving old firmware
+            // behavior where every constellation had exactly one burst.
             mSvs.erase(std::remove_if(mSvs.begin(), mSvs.end(),
                                       [&](const GnssSvInfo& s) {
-                                          return s.constellation == constellation;
+                                          return s.constellation == constellation &&
+                                                 s.carrierFrequencyHz == carrierHz;
                                       }),
                        mSvs.end());
         }
+        (void)bandKey;
 
         for (int i = 0; i < 4; i++) {
             int base = 4 + i * 4;
@@ -266,8 +337,13 @@ void NmeaParser::parseSentence() {
             sv.azimuthDegrees = tokAzim.empty() ? 0 : str2float(tokAzim.p, tokAzim.end);
             sv.cN0Dbhz = tokSnr.empty() ? 0 : str2float(tokSnr.p, tokSnr.end);
             sv.basebandCN0DbHz = sv.cN0Dbhz;
-            sv.carrierFrequencyHz = 0;
             sv.svFlag = 0;
+            if (carrierHz != 0) {
+                sv.carrierFrequencyHz = carrierHz;
+                sv.svFlag |= (int)IGnssCallback::GnssSvFlags::HAS_CARRIER_FREQUENCY;
+            } else {
+                sv.carrierFrequencyHz = 0;
+            }
             for (int u = 0; u < 12; u++) {
                 if (mUsedInFix[u] == prn) {
                     sv.svFlag |= (int)IGnssCallback::GnssSvFlags::USED_IN_FIX;
@@ -276,9 +352,8 @@ void NmeaParser::parseSentence() {
             if ((int)mSvs.size() < kMaxSvs) mSvs.push_back(sv);
         }
 
-        // Emit once the last message of the *combined* "GN" burst arrives.
-        // GSV is per-constellation; we report after each constellation's final
-        // message so the framework gets incremental SV updates.
+        // Emit once the last message of each (constellation, band) burst
+        // arrives so the framework gets incremental SV updates.
         if (numMessages == msgNumber && mSvStatusCb) {
             mSvStatusCb(mSvs);
         }
