@@ -204,6 +204,7 @@ void Gnss::readerThreadLoop() {
         }
         ALOGI("transport online: %s", mTransportName.c_str());
         sendUbxRate(mSessionActive ? mFixIntervalMs.load() : kIdleRateMs);
+        sendAidIni();  // inject as soon as transport is up (session may or may not be active)
 
         char buf[512];
         while (mThreadRunning) {
@@ -332,6 +333,12 @@ void Gnss::reportLocation(const GnssLocation& locationIn) {
         mLastLon = locationIn.longitudeDegrees;
         mLastAcc = locationIn.horizontalAccuracyMeters;
         mFixType = (locationIn.gnssLocationFlags & GnssLocation::HAS_LAT_LONG) ? 3 : 0;
+        // Persist for next cold-start AGNSS seed
+        if (mFixType == 3) {
+            saveLastFixPos(locationIn.latitudeDegrees, locationIn.longitudeDegrees,
+                           (locationIn.gnssLocationFlags & GnssLocation::HAS_ALTITUDE)
+                               ? locationIn.altitudeMeters : 0);
+        }
     }
     // 节流日志：每10个fix打一行，上机验证交付链
     static std::atomic<int> sFixCount{0};
@@ -438,6 +445,21 @@ void gpsWeekTowFromUnix(int64_t unixMs, uint16_t* week, double* tow) {
 }  // namespace
 
 void Gnss::sendAidIni() {
+    // HyperOS framework may not call injectTime/injectBestLocation —
+    // self-populate from system clock + last fix position (stored to /data)
+    if (!mAidIni.hasTime) {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        int64_t nowMs = (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+        if (nowMs > 1700000000000LL) {
+            gpsWeekTowFromUnix(nowMs, &mAidIni.gpsWeek, &mAidIni.towSec);
+            mAidIni.hasTime = true;
+            mAidIni.tAccS2 = 25;  // ~50ns uncertainty (system clock)
+        }
+    }
+    if (!mAidIni.hasPos) {
+        loadLastFixPos();
+    }
     if (!mAidIni.hasPos && !mAidIni.hasTime) return;
     if (!propOn("agnss_ini", "1")) return;  // kill switch
 
@@ -445,8 +467,43 @@ void Gnss::sendAidIni() {
     std::lock_guard<std::mutex> lock(mTransportMutex);
     if (mTransport != nullptr) {
         mTransport->write((const char*)frame.data(), frame.size());
-        ALOGI("AID-INI injected (pos=%d time=%d wk=%u tow=%.1f)", mAidIni.hasPos,
-              mAidIni.hasTime, mAidIni.gpsWeek, mAidIni.towSec);
+        ALOGI("AID-INI injected (pos=%d time=%d wk=%u tow=%.1f lat=%.3f lon=%.3f)",
+              mAidIni.hasPos, mAidIni.hasTime, mAidIni.gpsWeek, mAidIni.towSec,
+              mAidIni.latDeg, mAidIni.lonDeg);
+    }
+}
+
+// Persist last fix position for cross-session AGNSS seeding
+void Gnss::saveLastFixPos(double lat, double lon, double alt) {
+    char prop[92];  // PROP_VALUE_MAX
+    char key[128];
+    snprintf(key, sizeof(key), "%slast_lat", kPropPrefix);
+    snprintf(prop, sizeof(prop), "%.6f", lat);
+    property_set(key, prop);
+    snprintf(key, sizeof(key), "%slast_lon", kPropPrefix);
+    snprintf(prop, sizeof(prop), "%.6f", lon);
+    property_set(key, prop);
+    snprintf(key, sizeof(key), "%slast_alt", kPropPrefix);
+    snprintf(prop, sizeof(prop), "%.1f", alt);
+    property_set(key, prop);
+}
+
+void Gnss::loadLastFixPos() {
+    char prop[92];  // PROP_VALUE_MAX
+    char key[128];
+    snprintf(key, sizeof(key), "%slast_lat", kPropPrefix);
+    if (property_get(key, prop, "") > 0) {
+        mAidIni.latDeg = atof(prop);
+        snprintf(key, sizeof(key), "%slast_lon", kPropPrefix);
+        if (property_get(key, prop, "") > 0) {
+            mAidIni.lonDeg = atof(prop);
+            snprintf(key, sizeof(key), "%slast_alt", kPropPrefix);
+            property_get(key, prop, "0");
+            mAidIni.altM = atof(prop);
+            mAidIni.posAccM2 = 10000;  // 100m coarse — we've moved possibly
+            mAidIni.hasPos = true;
+            ALOGI("loaded last fix pos: %.3f,%.3f", mAidIni.latDeg, mAidIni.lonDeg);
+        }
     }
 }
 

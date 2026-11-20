@@ -94,6 +94,8 @@ class Gnss : public BnGnss {
     bool sendRawCommand(const std::string& payload);   // control server hook
     std::string statusJson();                          // control server hook
     void sendAidIni();                                 // CASIC warm-start injection
+    void saveLastFixPos(double lat, double lon, double alt);
+    void loadLastFixPos();
 
     void reportLocation(const GnssLocation& location);
     void reportSvStatus(const std::vector<IGnssCallback::GnssSvInfo>& svList);
