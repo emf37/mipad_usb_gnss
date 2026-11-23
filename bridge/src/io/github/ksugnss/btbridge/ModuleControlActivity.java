@@ -41,10 +41,8 @@ public class ModuleControlActivity extends Activity implements ControlLink.Liste
         int pad = (int) (10 * getResources().getDisplayMetrics().density);
         root.setPadding(pad, pad, pad, pad);
 
-        // 蓝牙桥接入口（原主界面）
-        android.widget.Button btBtn = new android.widget.Button(this);
-        btBtn.setAllCaps(false);
-        btBtn.setText("📶 蓝牙GNSS桥接 »");
+        // 蓝牙桥接入口（用 styledBtn 确保在 HyperOS 上渲染）
+        Button btBtn = styledBtn("📶 蓝牙GNSS桥接（选设备）");
         btBtn.setOnClickListener(v ->
                 startActivity(new android.content.Intent(this, MainActivity.class)));
         root.addView(btBtn);
