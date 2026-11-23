@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/btnModuleControl"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:text="GNSS 模组控制 / 状态"
+        android:textSize="18sp"
+        android:textColor="#FFFFFF"
+        android:background="#1565C0"
+        android:gravity="center"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="选择已配对的蓝牙GNSS接收器开始桥接"
+        android:paddingBottom="12dp" />
+
+    <ListView
+        android:id="@+id/deviceList"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+</LinearLayout>

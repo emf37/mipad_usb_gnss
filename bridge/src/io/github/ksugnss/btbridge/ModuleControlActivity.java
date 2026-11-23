@@ -41,6 +41,14 @@ public class ModuleControlActivity extends Activity implements ControlLink.Liste
         int pad = (int) (10 * getResources().getDisplayMetrics().density);
         root.setPadding(pad, pad, pad, pad);
 
+        // 蓝牙桥接入口（原主界面）
+        android.widget.Button btBtn = new android.widget.Button(this);
+        btBtn.setAllCaps(false);
+        btBtn.setText("📶 蓝牙GNSS桥接 »");
+        btBtn.setOnClickListener(v ->
+                startActivity(new android.content.Intent(this, MainActivity.class)));
+        root.addView(btBtn);
+
         // 状态行
         statusView = new TextView(this);
         statusView.setText("连接守护进程中…");

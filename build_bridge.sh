@@ -13,11 +13,13 @@ KEYSTORE="$ROOT/deps/bridge.keystore"
 rm -rf "$BUILD"
 mkdir -p "$BUILD/gen" "$BUILD/classes"
 
-echo "== [1/5] aapt2 link =="
+echo "== [1/5] aapt2 compile+link =="
+"$BT/aapt2.exe" compile --dir "$ROOT/bridge/res" -o "$BUILD/res.zip"
 "$BT/aapt2.exe" link -I "$AJAR" \
   --manifest "$ROOT/bridge/AndroidManifest.xml" \
   --java "$BUILD/gen" \
-  -o "$BUILD/base.apk"
+  -o "$BUILD/base.apk" \
+  "$BUILD/res.zip"
 
 echo "== [2/5] javac =="
 SRCS=$(find "$ROOT/bridge/src" "$BUILD/gen" -name '*.java' 2>/dev/null)
@@ -48,7 +50,7 @@ if [[ ! -f "$KEYSTORE" ]]; then
 fi
 java -cp "$BT/lib/apksigner.jar" com.android.apksigner.ApkSignerTool sign \
   --ks "$(cygpath -w "$KEYSTORE")" --ks-pass pass:android --key-pass pass:android \
-  --out "$(cygpath -w "$ROOT/dist/GnssBtBridge-v1.1.apk")" \
+  --out "$(cygpath -w "$ROOT/dist/GnssBtBridge-v1.2.apk")" \
   "$(cygpath -w "$BUILD/aligned.apk")"
 
-ls -la "$ROOT/dist/GnssBtBridge-v1.1.apk"
+ls -la "$ROOT/dist/GnssBtBridge-v1.2.apk"
