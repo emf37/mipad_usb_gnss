@@ -13,9 +13,11 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -28,12 +30,14 @@ import java.util.ArrayList;
 import java.util.Set;
 
 public class MainActivity extends Activity
-        implements View.OnClickListener, AdapterView.OnItemSelectedListener, Runnable {
+        implements View.OnClickListener, AdapterView.OnItemSelectedListener,
+                   TextView.OnEditorActionListener, Runnable {
 
     private static final int REQ_BT = 1;
     private Handler ui;
     private TextView tvStatus;
     private TextView tvLog;
+    private EditText etCmd;
     private Spinner spBt;
     private Button btnAtgm;
     private Button btnBk;
@@ -53,13 +57,16 @@ public class MainActivity extends Activity
         spBt = (Spinner) findViewById(R.id.spBt);
         btnAtgm = (Button) findViewById(R.id.btnAtgm);
         btnBk = (Button) findViewById(R.id.btnBk);
+        etCmd = (EditText) findViewById(R.id.etCmd);
         int[] ids = {R.id.btnAtgm, R.id.btnBk, R.id.btnRate1, R.id.btnRate2,
                 R.id.btnRate5, R.id.btnRate10, R.id.btnSysGpsBd, R.id.btnSysAll,
-                R.id.btnHot, R.id.btnCold, R.id.btnVer, R.id.btnSave, R.id.btnBtConn};
+                R.id.btnHot, R.id.btnCold, R.id.btnVer, R.id.btnSave, R.id.btnBtConn,
+                R.id.btnSend};
         for (int i = 0; i < ids.length; i++) {
             findViewById(ids[i]).setOnClickListener(this);
         }
         spBt.setOnItemSelectedListener(this);
+        etCmd.setOnEditorActionListener(this);
         checkPerm();
         mark();
         Thread t = new Thread(this, "poll");
@@ -79,8 +86,19 @@ public class MainActivity extends Activity
         if (id == R.id.btnAtgm) { module = 1; mark(); lg("mod: ATGM"); return; }
         if (id == R.id.btnBk) { module = 2; mark(); lg("mod: BK"); return; }
         if (id == R.id.btnBtConn) { connBt(); return; }
+        if (id == R.id.btnSend) { sendManual(); return; }
         String cmd = cmdFor(id);
         if (cmd != null) send(cmd);
+    }
+
+    // TextView.OnEditorActionListener (IME send on etCmd)
+    @Override
+    public boolean onEditorAction(TextView v, int actionId, android.view.KeyEvent event) {
+        if (actionId == EditorInfo.IME_ACTION_SEND) {
+            sendManual();
+            return true;
+        }
+        return false;
     }
 
     // AdapterView.OnItemSelectedListener
@@ -148,6 +166,16 @@ public class MainActivity extends Activity
         if (id == R.id.btnVer) return module == 1 ? "$PCAS06,0" : "$POLCFGPTVER";
         if (id == R.id.btnSave) return module == 1 ? "$PCAS00" : "$POLCFGSAVE";
         return null;
+    }
+
+    private void sendManual() {
+        String c = etCmd.getText().toString().trim();
+        if (c.length() == 0) {
+            Toast.makeText(this, "empty", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        send(c);
+        etCmd.setText("");
     }
 
     private void mark() {
