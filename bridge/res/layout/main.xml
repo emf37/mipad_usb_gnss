@@ -1,32 +1,199 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="12dp">
+    android:fillViewport="true"
+    android:fitsSystemWindows="true">
 
-    <TextView
-        android:id="@+id/btnModuleControl"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:text="GNSS 模组控制 / 状态"
-        android:textSize="18sp"
-        android:textColor="#FFFFFF"
-        android:background="#1565C0"
-        android:gravity="center"
-        android:layout_marginBottom="12dp" />
-
-    <TextView
-        android:id="@+id/statusText"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="选择已配对的蓝牙GNSS接收器开始桥接"
-        android:paddingBottom="12dp" />
+        android:orientation="vertical"
+        android:padding="16dp">
 
-    <ListView
-        android:id="@+id/deviceList"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
+        <!-- 标题 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="GNSS 工具箱"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="#1A237E"
+            android:layout_marginBottom="4dp" />
 
-</LinearLayout>
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:background="#1A237E"
+            android:layout_marginBottom="16dp" />
+
+        <!-- 状态 -->
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="连接守护进程..."
+            android:textSize="14sp"
+            android:padding="12dp"
+            android:background="#E8EAF6"
+            android:layout_marginBottom="16dp" />
+
+        <!-- 模组选择 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="模组:"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="16dp">
+
+            <Button
+                android:id="@+id/btnAtgm"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="中科微"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/btnBk"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="博通BK"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- 更新率 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="更新率:"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="12dp">
+
+            <Button android:id="@+id/btnRate1" style="?android:attr/buttonStyleSmall"
+                android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:text="1Hz" android:textSize="13sp" />
+            <Button android:id="@+id/btnRate2" style="?android:attr/buttonStyleSmall"
+                android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:text="2Hz" android:textSize="13sp" />
+            <Button android:id="@+id/btnRate5" style="?android:attr/buttonStyleSmall"
+                android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:text="5Hz" android:textSize="13sp" />
+            <Button android:id="@+id/btnRate10" style="?android:attr/buttonStyleSmall"
+                android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+                android:text="10Hz" android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- 星座 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="星座:"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="12dp">
+
+            <Button android:id="@+id/btnSysGpsBd" style="?android:attr/buttonStyleSmall"
+                android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:text="GPS+北斗" android:textSize="13sp" />
+            <Button android:id="@+id/btnSysAll" style="?android:attr/buttonStyleSmall"
+                android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:text="全系统" android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- 操作 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="操作:"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="16dp">
+
+            <Button android:id="@+id/btnHot" style="?android:attr/buttonStyleSmall"
+                android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:text="热启动" android:textSize="13sp" />
+            <Button android:id="@+id/btnCold" style="?android:attr/buttonStyleSmall"
+                android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:text="冷启动" android:textSize="13sp" />
+            <Button android:id="@+id/btnVer" style="?android:attr/buttonStyleSmall"
+                android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:text="版本" android:textSize="13sp" />
+            <Button android:id="@+id/btnSave" style="?android:attr/buttonStyleSmall"
+                android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+                android:text="保存" android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- 蓝牙 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="蓝牙GNSS桥接:"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <Spinner
+            android:id="@+id/spBt"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnBtConn"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="连接蓝牙设备"
+            android:textSize="14sp"
+            android:layout_marginBottom="16dp" />
+
+        <!-- 日志 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="日志:"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/tvLog"
+            android:layout_width="match_parent"
+            android:layout_height="240dp"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:padding="8dp"
+            android:background="#F5F5F5"
+            android:scrollbars="vertical" />
+
+    </LinearLayout>
+</ScrollView>

@@ -12,8 +12,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
-
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
@@ -21,180 +19,101 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.UUID;
 
-/**
- * Foreground service bridging a Bluetooth SPP GNSS receiver to a local TCP
- * server socket. The gnss_usb HAL connects as a TCP client
- * (persist.vendor.gnss_usb.source=tcp, socket_addr=tcp://127.0.0.1:5000) and
- * receives the NMEA stream; writes from the HAL (e.g. UBX rate commands) are
- * relayed back over SPP.
- */
 public class BridgeService extends Service {
-    private static final UUID SPP_UUID =
-            UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
-    public static final int TCP_PORT = 5000;
-
-    private volatile boolean running;
+    private static final UUID SPP = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private Thread worker;
-    private NotificationManager nm;
 
-    @Override
-    public void onCreate() {
+    @Override public void onCreate() {
         super.onCreate();
-        nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (Build.VERSION.SDK_INT >= 26) {
-            nm.createNotificationChannel(new NotificationChannel(
-                    "bridge", "GNSS BT Bridge", NotificationManager.IMPORTANCE_LOW));
-        }
+        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (Build.VERSION.SDK_INT >= 26)
+            nm.createNotificationChannel(new NotificationChannel("bt", "Bridge", NotificationManager.IMPORTANCE_LOW));
+        Notification.Builder b = new Notification.Builder(this);
+        if (Build.VERSION.SDK_INT >= 26) b.setChannelId("bt");
+        startForeground(1, b.setContentTitle("GNSS BT Bridge")
+                .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth).setOngoing(true).build());
     }
 
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        String mac = intent != null ? intent.getStringExtra("mac") : null;
-        startForegroundCompat("connecting " + (mac == null ? "?" : mac));
-        if (running) {
-            notify("already running");
-            return START_STICKY;
+    @Override public int onStartCommand(Intent it, int f, int id) {
+        String mac = it != null ? it.getStringExtra("mac") : null;
+        if (mac != null && worker == null) {
+            worker = new Thread(new BtLoop(this, mac), "bt");
+            worker.start();
         }
-        if (mac == null) {
-            notify("no device selected");
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-        running = true;
-        final String deviceMac = mac;
-        worker = new Thread(() -> runBridge(deviceMac), "bt-bridge");
-        worker.start();
         return START_STICKY;
     }
 
-    @Override
-    public void onDestroy() {
-        running = false;
+    @Override public IBinder onBind(Intent i) { return null; }
+
+    @Override public void onDestroy() {
         if (worker != null) worker.interrupt();
         super.onDestroy();
     }
 
-    @Override
-    public IBinder onBind(Intent intent) {
-        return null;
-    }
+    // main loop: keep BT connected, serve TCP clients on :5000
+    private static class BtLoop implements Runnable {
+        private final BridgeService svc;
+        private final String mac;
+        BtLoop(BridgeService s, String m) { svc = s; mac = m; }
 
-    private void runBridge(String mac) {
-        BluetoothAdapter bt = ((BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE))
-                .getAdapter();
-        if (bt == null) {
-            notify("no bluetooth adapter");
-            stopSelf();
-            return;
-        }
-
-        // 1. Keep the SPP link up (auto-reconnect).
-        // 2. For each connected SPP session, accept HAL clients on the TCP
-        //    server socket and pump bytes both ways.
-        while (running) {
-            try {
-                BluetoothDevice dev = bt.getRemoteDevice(mac);
-                bt.cancelDiscovery();
-                notify("connecting " + mac);
-                BluetoothSocket sock = dev.createRfcommSocketToServiceRecord(SPP_UUID);
-                sock.connect();
-                notify("SPP connected, listening tcp:" + TCP_PORT);
-                serve(sock);
-                safeClose(sock);
-            } catch (Exception e) {
-                notify("error: " + e.getMessage() + " (retry in 3s)");
-                sleepQuiet(3000);
-            }
-        }
-    }
-
-    private void serve(BluetoothSocket sock) throws IOException {
-        ServerSocket server = new ServerSocket(TCP_PORT, 4, InetAddress.getByName("127.0.0.1"));
-        try {
-            while (running) {
-                Socket client = server.accept();
-                notify("HAL connected");
+        public void run() {
+            BluetoothAdapter bt = ((BluetoothManager) svc.getSystemService(Context.BLUETOOTH_SERVICE)).getAdapter();
+            if (bt == null) return;
+            while (!Thread.currentThread().isInterrupted()) {
+                BluetoothSocket sock = null;
                 try {
-                    pump(sock, client);
-                } catch (IOException e) {
-                    // client went away; wait for the next one
-                } finally {
-                    notify("SPP connected, listening tcp:" + TCP_PORT);
-                    safeClose(client);
+                    bt.cancelDiscovery();
+                    BluetoothDevice dev = bt.getRemoteDevice(mac);
+                    sock = dev.createRfcommSocketToServiceRecord(SPP);
+                    sock.connect();
+                    serve(sock);
+                } catch (Exception e) {
+                    if (sock != null) { try { sock.close(); } catch (Exception ignored) {} }
+                    try { Thread.sleep(3000); } catch (InterruptedException x) { return; }
                 }
             }
-        } finally {
-            server.close();
+        }
+
+        private void serve(BluetoothSocket bt) throws Exception {
+            ServerSocket srv = new ServerSocket(5000, 4, InetAddress.getLoopbackAddress());
+            try {
+                while (bt.isConnected()) {
+                    Socket cli = srv.accept();
+                    try { pump(bt, cli); } catch (Exception ignored) {}
+                    try { cli.close(); } catch (Exception ignored) {}
+                }
+            } finally {
+                try { srv.close(); } catch (Exception ignored) {}
+            }
+        }
+
+        private void pump(BluetoothSocket bt, Socket tcp) throws Exception {
+            InputStream btIn = bt.getInputStream();
+            OutputStream btOut = bt.getOutputStream();
+            InputStream tcpIn = tcp.getInputStream();
+            OutputStream tcpOut = tcp.getOutputStream();
+            Thread back = new Thread(new TcpToBt(tcpIn, btOut), "back");
+            back.start();
+            byte[] b = new byte[1024];
+            int n;
+            while ((n = btIn.read(b)) > 0) { tcpOut.write(b, 0, n); tcpOut.flush(); }
+            back.interrupt();
         }
     }
 
-    private void pump(BluetoothSocket bt, Socket tcp) throws IOException {
-        InputStream btIn = bt.getInputStream();
-        OutputStream btOut = bt.getOutputStream();
-        InputStream tcpIn = tcp.getInputStream();
-        OutputStream tcpOut = tcp.getOutputStream();
+    // TCP -> BT direction
+    private static class TcpToBt implements Runnable {
+        private final InputStream in;
+        private final OutputStream out;
 
-        Thread back = new Thread(() -> {
-            byte[] buf = new byte[256];
+        TcpToBt(InputStream i, OutputStream o) { in = i; out = o; }
+
+        public void run() {
+            byte[] b = new byte[256];
             try {
                 int n;
-                while (running && (n = tcpIn.read(buf)) > 0) {
-                    btOut.write(buf, 0, n);
-                    btOut.flush();
-                }
-            } catch (IOException ignored) {
-            }
-        }, "tcp->bt");
-        back.start();
-
-        byte[] buf = new byte[1024];
-        int n;
-        while (running && (n = btIn.read(buf)) > 0) {
-            tcpOut.write(buf, 0, n);
-            tcpOut.flush();
-        }
-        back.interrupt();
-    }
-
-    private void startForegroundCompat(String text) {
-        Notification.Builder b = Build.VERSION.SDK_INT >= 26
-                ? new Notification.Builder(this, "bridge")
-                : new Notification.Builder(this);
-        Notification n = b.setContentTitle("GNSS BT Bridge")
-                .setContentText(text)
-                .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-                .setOngoing(true)
-                .build();
-        if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(1, n, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
-        } else {
-            startForeground(1, n);
-        }
-    }
-
-    private void notify(String text) {
-        Notification.Builder b = Build.VERSION.SDK_INT >= 26
-                ? new Notification.Builder(this, "bridge")
-                : new Notification.Builder(this);
-        nm.notify(1, b.setContentTitle("GNSS BT Bridge")
-                .setContentText(text)
-                .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-                .setOngoing(true)
-                .build());
-    }
-
-    private static void safeClose(java.io.Closeable c) {
-        try {
-            if (c != null) c.close();
-        } catch (IOException ignored) {
-        }
-    }
-
-    private static void sleepQuiet(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+                while ((n = in.read(b)) > 0) { out.write(b, 0, n); out.flush(); }
+            } catch (Exception ignored) {}
         }
     }
 }
