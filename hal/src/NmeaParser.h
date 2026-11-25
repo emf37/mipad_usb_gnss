@@ -21,6 +21,7 @@
 #include <aidl/android/hardware/gnss/IGnssCallback.h>
 
 #include <cstdint>
+#include <map>
 #include <functional>
 #include <string>
 #include <vector>
@@ -96,6 +97,11 @@ class NmeaParser {
 
     // SV list has new data this epoch; flushed to the framework once, on RMC
     bool mSvsDirty = false;
+
+    // Last time each (constellation, carrier) GSV burst started (msg 1), ms.
+    // Buckets whose burst vanished (module dropped a band after AGNSS/acquisition
+    // phase) would otherwise keep stale entries forever -> list pinned at kMaxSvs.
+    std::map<std::pair<int, int64_t>, int64_t> mBucketSeenMs;
 
     // fix accumulated across the sentences of one reporting cycle
     GnssLocation mFix;

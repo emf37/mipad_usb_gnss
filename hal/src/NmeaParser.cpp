@@ -193,6 +193,7 @@ void NmeaParser::reset() {
     mHaveGsa = false;
     mFix = GnssLocation{};
     mSvs.clear();
+    mBucketSeenMs.clear();
     mUsedPrns.clear();
     mUsedConsts.clear();
 }
@@ -328,6 +329,7 @@ void NmeaParser::parseSentence() {
             // that same constellation+carrier only. carrier==0 entries form the
             // single legacy "unknown band" bucket, preserving old firmware
             // behavior where every constellation had exactly one burst.
+            mBucketSeenMs[{(int)constellation, carrierHz}] = bootTimeNanos() / 1000000;
             mSvs.erase(std::remove_if(mSvs.begin(), mSvs.end(),
                                       [&](const GnssSvInfo& s) {
                                           return s.constellation == constellation &&
@@ -504,6 +506,23 @@ void NmeaParser::parseSentence() {
     if (!memcmp(type, "RMC", 3)) {
         mUsedPrns.clear();
         mUsedConsts.clear();
+        // Evict (constellation, carrier) buckets whose GSV burst has not
+        // restarted for 5 s: receivers drop bands after the acquisition/AGNSS
+        // phase and those entries are never erased by the msg-1 wipe, pinning
+        // the list at kMaxSvs with zombies (observed: 81 live + 47 stale).
+        int64_t nowMs = bootTimeNanos() / 1000000;
+        mSvs.erase(std::remove_if(mSvs.begin(), mSvs.end(),
+                                  [&](const GnssSvInfo& s) {
+                                      auto it = mBucketSeenMs.find(
+                                              {(int)s.constellation, s.carrierFrequencyHz});
+                                      return it == mBucketSeenMs.end() ||
+                                             nowMs - it->second > 5000;
+                                  }),
+                   mSvs.end());
+        for (auto it = mBucketSeenMs.begin(); it != mBucketSeenMs.end();) {
+            if (nowMs - it->second > 5000) it = mBucketSeenMs.erase(it);
+            else ++it;
+        }
         if (mSvsDirty && mSvStatusCb) {
             mSvStatusCb(mSvs);
             mSvsDirty = false;

@@ -114,6 +114,15 @@ v2.2 起声明 `BLUETOOTH_SCAN(neverForLocation)`——Android 12+ 缺它时 `ca
 SecurityException 会导致 SPP 永远连不上。v2.3 起显式绑定 `127.0.0.1`（绑 `::1` 会让 HAL 的
 IPv4 连接吃 ECONNREFUSED）。
 
+**BK166X 指令语义**（按官方接口说明书 V1.9.37）：
+
+- `$POLCFGNAV,navRate,measRate` 解算/观测频率，**仅支持 1/5/10/20**，模组自动重启约 2 秒生效；
+  NMEA 语句输出速率是独立命令 `$POLCFGMSG,1,<hz>`——App 更新率按钮对 BK 同时发这两条，
+  2Hz 档回落为 1Hz（解算不支持 2）
+- `$POLCFGSYS,<sysMask>` 十进制位掩码：GPS+北斗双频=15（L1|L5|B1I|B2A），全系统=1023
+- 模组收到命令必回 `$OK`/`$FAIL`——**若日志无应答且速率不生效，是 HC-04 的 TX→模组 RX
+  方向没接好**（NMEA 能出来说明模组 TX→HC-04 RX 已通），检查串口线交叉连接
+
 > 更新运行中的守护二进制：关定位总开关 → `activate.sh stop` → 替换 `bin/gnss_usb_hal`
 > （deploy 目录 `/data/adb/gnss_usb/` 与模块目录都要换，cp 后核对 md5）→ `activate.sh start`
 > → 开定位。切勿在框架持 binder 时直接杀守护（fg 死锁→watchdog 死机）。

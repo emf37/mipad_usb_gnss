@@ -172,19 +172,31 @@ public class MainActivity extends Activity
         private final String cmd;
         CmdRun(MainActivity act, String c) { a = act; cmd = c; }
         public void run() {
-            String req = cmd.startsWith("SOURCE ") ? cmd : "SEND " + cmd;
-            String r = a.hal(req);
-            if (r != null && r.length() > 0) a.lg(r);
+            String[] lines = cmd.split("\n");
+            for (int i = 0; i < lines.length; i++) {
+                String req = lines[i].startsWith("SOURCE ") ? lines[i] : "SEND " + lines[i];
+                String r = a.hal(req);
+                if (r != null && r.length() > 0) a.lg(r);
+            }
         }
     }
 
     private String cmdFor(int id) {
-        if (id == R.id.btnRate1) return module == 1 ? "$PCAS02,1000" : "$POLCFGNAV,1,1";
-        if (id == R.id.btnRate2) return module == 1 ? "$PCAS02,500" : "$POLCFGNAV,5,5";
-        if (id == R.id.btnRate5) return "$PCAS02,200";
-        if (id == R.id.btnRate10) return module == 1 ? "$PCAS02,100" : "$POLCFGNAV,10,10";
-        if (id == R.id.btnSysGpsBd) return "$PCAS04,3";
-        if (id == R.id.btnSysAll) return module == 1 ? "$PCAS04,7F" : "$POLCFGSYS,3FFH";
+        // BK: POLCFGNAV <navRate,measRate> only supports 1/5/10/20 Hz and
+        // restarts the receiver (~2s); NMEA output rate is a separate
+        // POLCFGMSG,1,<hz>. Multiple commands separated by ';'.
+        if (id == R.id.btnRate1)
+            return module == 1 ? "$PCAS02,1000" : "$POLCFGNAV,1,1;$POLCFGMSG,1,1";
+        if (id == R.id.btnRate2)
+            return module == 1 ? "$PCAS02,500" : "$POLCFGNAV,1,1;$POLCFGMSG,1,1";
+        if (id == R.id.btnRate5)
+            return module == 1 ? "$PCAS02,200" : "$POLCFGNAV,5,5;$POLCFGMSG,1,5";
+        if (id == R.id.btnRate10)
+            return module == 1 ? "$PCAS02,100" : "$POLCFGNAV,10,10;$POLCFGMSG,1,10";
+        if (id == R.id.btnSysGpsBd)
+            return module == 1 ? "$PCAS04,3" : "$POLCFGSYS,15";
+        if (id == R.id.btnSysAll)
+            return module == 1 ? "$PCAS04,7F" : "$POLCFGSYS,1023";
         if (id == R.id.btnHot) return module == 1 ? "$PCAS10,0" : "$POLCFGRESET,0";
         if (id == R.id.btnCold) return module == 1 ? "$PCAS10,2" : "$POLCFGRESET,1";
         if (id == R.id.btnVer) return module == 1 ? "$PCAS06,0" : "$POLCFGPTVER";
@@ -259,14 +271,22 @@ public class MainActivity extends Activity
     // ---- HAL ----
     private void send(final String cmd) {
         if (cmd == null) return;
-        String c = cmd;
-        if (module == 1 && c.contains("PCAS") && !c.contains("*")) {
-            int x = 0;
-            for (int i = 1; i < c.length(); i++) x ^= c.charAt(i);
-            c = c + String.format("*%02X", x & 0xFF);
+        // build ready-to-send lines (XOR checksum applied per PCAS line);
+        // ';' separates multiple commands for one button
+        String[] parts = cmd.split(";");
+        StringBuilder sb = new StringBuilder();
+        for (int k = 0; k < parts.length; k++) {
+            String c = parts[k];
+            if (module == 1 && c.contains("PCAS") && !c.contains("*")) {
+                int x = 0;
+                for (int i = 1; i < c.length(); i++) x ^= c.charAt(i);
+                c = c + String.format("*%02X", x & 0xFF);
+            }
+            if (k > 0) sb.append('\n');
+            sb.append(c);
         }
-        lg(">> " + c);
-        Thread t = new Thread(new CmdRun(this, c), "cmd");
+        lg(">> " + sb.toString().replace('\n', ' '));
+        Thread t = new Thread(new CmdRun(this, sb.toString()), "cmd");
         t.start();
     }
 
