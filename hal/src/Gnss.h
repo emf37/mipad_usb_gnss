@@ -93,6 +93,7 @@ class Gnss : public BnGnss {
     void sendUbxRate(unsigned short periodMs);
     bool sendRawCommand(const std::string& payload);   // control server hook
     std::string statusJson();                          // control server hook
+    bool setSource(const std::string& s);              // control server hook
     void sendAidIni();                                 // CASIC warm-start injection
     void saveLastFixPos(double lat, double lon, double alt);
     void loadLastFixPos();

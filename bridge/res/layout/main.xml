@@ -38,11 +38,11 @@
             android:background="#E8EAF6"
             android:layout_marginBottom="16dp" />
 
-        <!-- 模组选择 -->
+        <!-- 模组/链路选择 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="模组:"
+            android:text="模组 · 链路:"
             android:textSize="14sp"
             android:textStyle="bold"
             android:layout_marginBottom="4dp" />

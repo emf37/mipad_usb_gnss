@@ -58,6 +58,10 @@ struct TransportConfig {
     static TransportConfig fromProps();
 };
 
+// Runtime source override set via the control server ("SOURCE tcp" etc.).
+// Takes precedence over the property until the daemon exits; empty = none.
+void setSourceOverride(const std::string& s);
+
 // Parse "vid:pid" (case-insensitive hex). Returns false on malformed input.
 bool parseUsbId(const std::string& s, unsigned* vid, unsigned* pid);
 

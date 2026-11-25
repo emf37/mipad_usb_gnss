@@ -121,6 +121,11 @@ void ControlServer::clientLoop(int fd) {
                 bool ok = !bin.empty() && mSend ? mSend(bin) : false;
                 std::string r = ok ? "OK " + std::to_string(bin.size()) + "B\n" : "ERR\n";
                 if (::send(fd, r.data(), r.size(), MSG_NOSIGNAL) < 0) open = false;
+            } else if (line.rfind("SOURCE ", 0) == 0) {
+                std::string src = line.substr(7);
+                bool ok = !src.empty() && mSource ? mSource(src) : false;
+                std::string r = ok ? "OK " + src + "\n" : "ERR\n";
+                if (::send(fd, r.data(), r.size(), MSG_NOSIGNAL) < 0) open = false;
             } else if (line == "SUB") {
                 subscribed = true;
                 std::lock_guard<std::mutex> lock(mClientsMutex);

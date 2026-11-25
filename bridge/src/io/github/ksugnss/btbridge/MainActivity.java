@@ -83,12 +83,35 @@ public class MainActivity extends Activity
     @Override
     public void onClick(View v) {
         int id = v.getId();
-        if (id == R.id.btnAtgm) { module = 1; mark(); lg("mod: ATGM"); return; }
-        if (id == R.id.btnBk) { module = 2; mark(); lg("mod: BK"); return; }
+        if (id == R.id.btnAtgm) {
+            module = 1;
+            mark();
+            switchSource("auto");
+            lg("mod: ATGM (中科微) → 链路切 USB");
+            return;
+        }
+        if (id == R.id.btnBk) {
+            module = 2;
+            mark();
+            if (btMac.length() == 0) {
+                lg("mod: BK (博通) 已选，但未选蓝牙设备——先选设备再切换");
+                Toast.makeText(this, "先选择蓝牙设备", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            connBt();
+            switchSource("tcp");
+            lg("mod: BK (博通) → 链路切蓝牙");
+            return;
+        }
         if (id == R.id.btnBtConn) { connBt(); return; }
         if (id == R.id.btnSend) { sendManual(); return; }
         String cmd = cmdFor(id);
         if (cmd != null) send(cmd);
+    }
+
+    private void switchSource(final String src) {
+        Thread t = new Thread(new CmdRun(this, "SOURCE " + src), "src");
+        t.start();
     }
 
     // TextView.OnEditorActionListener (IME send on etCmd)
@@ -149,7 +172,8 @@ public class MainActivity extends Activity
         private final String cmd;
         CmdRun(MainActivity act, String c) { a = act; cmd = c; }
         public void run() {
-            String r = a.hal("SEND " + cmd);
+            String req = cmd.startsWith("SOURCE ") ? cmd : "SEND " + cmd;
+            String r = a.hal(req);
             if (r != null && r.length() > 0) a.lg(r);
         }
     }

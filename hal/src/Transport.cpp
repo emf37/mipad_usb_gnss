@@ -12,6 +12,8 @@
 #include <cutils/properties.h>
 #include <log/log.h>
 
+#include <mutex>
+
 #include "SocketTransport.h"
 #include "TtyTransport.h"
 #include "UsbfsCh340.h"
@@ -27,7 +29,15 @@ int hexVal(char c) {
     if (c >= 'A' && c <= 'F') return c - 'A' + 10;
     return -1;
 }
+
+std::mutex gSourceOverrideMutex;
+std::string gSourceOverride;
 }  // namespace
+
+void setSourceOverride(const std::string& s) {
+    std::lock_guard<std::mutex> lock(gSourceOverrideMutex);
+    gSourceOverride = s;
+}
 
 TransportConfig TransportConfig::fromProps() {
     char prop[PROP_VALUE_MAX /* 92 */];
@@ -35,6 +45,10 @@ TransportConfig TransportConfig::fromProps() {
 
     property_get((std::string(kPropPrefix) + "source").c_str(), prop, "auto");
     cfg.source = prop;
+    {
+        std::lock_guard<std::mutex> lock(gSourceOverrideMutex);
+        if (!gSourceOverride.empty()) cfg.source = gSourceOverride;
+    }
 
     property_get((std::string(kPropPrefix) + "vid_pid").c_str(), prop, "1a86:7523");
     cfg.vidPid = prop;

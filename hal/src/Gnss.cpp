@@ -59,7 +59,8 @@ Gnss::Gnss() {
     // Companion-app control server (127.0.0.1:5001): status / raw send / live NMEA
     mControl = std::make_unique<ControlServer>(
             [this]() -> std::string { return statusJson(); },
-            [this](const std::string& p) -> bool { return sendRawCommand(p); });
+            [this](const std::string& p) -> bool { return sendRawCommand(p); },
+            [this](const std::string& s) -> bool { return setSource(s); });
     mControl->start(5001);
 
     // Wire the parser's outputs to the AIDL callbacks.
@@ -186,9 +187,10 @@ ScopedAStatus Gnss::close() {
 // ---- reader thread ----------------------------------------------------------
 
 void Gnss::readerThreadLoop() {
-    const TransportConfig cfg = TransportConfig::fromProps();
-
     while (mThreadRunning) {
+        // Re-resolved every cycle: SOURCE hot-switch only needs a transport
+        // teardown to take effect (or a retry when nothing was connected).
+        const TransportConfig cfg = TransportConfig::fromProps();
         std::unique_ptr<Transport> t = createTransport(cfg);
         if (t == nullptr) {
             ALOGI("no transport yet (source=%s); retrying every %d ms", cfg.source.c_str(),
@@ -238,11 +240,39 @@ void Gnss::readerThreadLoop() {
 }
 
 void Gnss::teardownTransport() {
-    std::lock_guard<std::mutex> lock(mTransportMutex);
-    if (mTransport != nullptr) {
-        mTransport->close();
-        mTransport.reset();
+    {
+        std::lock_guard<std::mutex> lock(mTransportMutex);
+        if (mTransport != nullptr) {
+            mTransport->close();
+            mTransport.reset();
+        }
+        mTransportName.clear();  // STATUS must not show a dead transport
     }
+    // Drop the stale snapshot too: no transport -> no live fix data.
+    std::lock_guard<std::mutex> lock(mStatusMutex);
+    mSatCount = 0;
+    mSatsUsed = 0;
+    mFixType = 0;
+    mLastLat = 0;
+    mLastLon = 0;
+    mLastAcc = 0;
+}
+
+bool Gnss::setSource(const std::string& s) {
+    if (s != "auto" && s != "usb" && s != "tty" && s != "tcp" && s != "unix") {
+        ALOGE("SOURCE: invalid '%s' (auto|usb|tty|tcp|unix)", s.c_str());
+        return false;
+    }
+    // Runtime override takes effect immediately; persist across daemon
+    // restarts too (best effort — property contexts may deny some callers).
+    setSourceOverride(s);
+    int rc = property_set("persist.vendor.gnss_usb.source", s.c_str());
+    if (rc != 0) ALOGW("SOURCE: persist prop write rc=%d (override still active)", rc);
+    ALOGI("SOURCE %s: switching (was '%s')", s.c_str(), mTransportName.c_str());
+    // Drop the current transport: the reader loop re-resolves config on its
+    // next cycle and reconnects on the new source. Equivalent to an unplug.
+    teardownTransport();
+    return true;
 }
 
 // ---- UBX CFG-RATE (best-effort; only u-blox receivers react) ----------------
