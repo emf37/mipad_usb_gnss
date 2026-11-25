@@ -2,6 +2,7 @@ package io.github.ksugnss.btbridge;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
@@ -34,6 +35,7 @@ public class MainActivity extends Activity
                    TextView.OnEditorActionListener, Runnable {
 
     private static final int REQ_BT = 1;
+    private SharedPreferences prefs;
     private Handler ui;
     private TextView tvStatus;
     private TextView tvLog;
@@ -51,6 +53,8 @@ public class MainActivity extends Activity
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
+        prefs = getSharedPreferences("state", MODE_PRIVATE);
+        module = prefs.getInt("module", 1);
         ui = new Handler(Looper.getMainLooper());
         tvStatus = (TextView) findViewById(R.id.tvStatus);
         tvLog = (TextView) findViewById(R.id.tvLog);
@@ -85,6 +89,7 @@ public class MainActivity extends Activity
         int id = v.getId();
         if (id == R.id.btnAtgm) {
             module = 1;
+            prefs.edit().putInt("module", module).apply();
             mark();
             switchSource("auto");
             lg("mod: ATGM (中科微) → 链路切 USB");
@@ -92,6 +97,7 @@ public class MainActivity extends Activity
         }
         if (id == R.id.btnBk) {
             module = 2;
+            prefs.edit().putInt("module", module).apply();
             mark();
             if (btMac.length() == 0) {
                 lg("mod: BK (博通) 已选，但未选蓝牙设备——先选设备再切换");
@@ -127,7 +133,10 @@ public class MainActivity extends Activity
     // AdapterView.OnItemSelectedListener
     @Override
     public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
-        if (pos >= 0 && pos < btMacs.size()) btMac = btMacs.get(pos);
+        if (pos >= 0 && pos < btMacs.size()) {
+            btMac = btMacs.get(pos);
+            prefs.edit().putString("bt_mac", btMac).apply();
+        }
     }
 
     @Override
@@ -265,6 +274,14 @@ public class MainActivity extends Activity
                     android.R.layout.simple_spinner_item, names);
             ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             spBt.setAdapter(ad);
+            String saved = prefs.getString("bt_mac", "");
+            for (int i = 0; i < btMacs.size(); i++) {
+                if (btMacs.get(i).equals(saved)) {
+                    spBt.setSelection(i);
+                    btMac = saved;
+                    break;
+                }
+            }
         } catch (Exception ignored) { }
     }
 
