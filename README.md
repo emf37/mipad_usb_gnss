@@ -91,8 +91,19 @@ bash build_bridge.sh     # dist/GnssBtBridge-*.apk（蓝牙SPP桥，可选，需
 
 ## 蓝牙 SPP 桥接（HyperOS 注意事项）
 
-配对 HC-04/HC-05 类串口模块后，App 内选设备 → 连接，即建立 `TCP 127.0.0.1:5000 ↔ SPP` 管道；
-HAL 侧配 `persist.vendor.gnss_usb.transport=tcp://127.0.0.1:5000` 即可把蓝牙 GNSS 当系统定位源。
+配对 HC-04/HC-05 类串口模块后，App 内选设备 → 连接，即建立 `TCP 127.0.0.1:5000 ↔ SPP` 管道。
+HAL 的 source 配置在线程启动时读取一次，切换数据源需安全重启守护（已实测）：
+
+```bash
+# 切到蓝牙（默认 socket_addr=tcp://127.0.0.1:5000）
+su -c 'setprop persist.vendor.gnss_usb.source tcp'
+# 切回 USB
+su -c 'setprop persist.vendor.gnss_usb.source auto'
+# 生效：关定位总开关 → 重启守护 → 开定位（顺序不能乱，框架持 binder 时杀守护会死机）
+adb shell cmd location set-location-enabled false 0
+su -c 'sh /data/adb/gnss_usb/activate.sh stop && sh /data/adb/gnss_usb/activate.sh start'
+adb shell cmd location set-location-enabled true 0
+```
 
 HyperOS 会把息屏后的 App 整体冻结（freezeUid reason=screen_off），桥接需一次性豁免（root）：
 
@@ -102,7 +113,8 @@ su -c 'cmd appops set io.github.ksugnss.btbridge RUN_ANY_IN_BACKGROUND allow'
 ```
 
 v2.2 起声明 `BLUETOOTH_SCAN(neverForLocation)`——Android 12+ 缺它时 `cancelDiscovery()` 抛
-SecurityException 会导致 SPP 永远连不上。
+SecurityException 会导致 SPP 永远连不上。v2.3 起显式绑定 `127.0.0.1`（绑 `::1` 会让 HAL 的
+IPv4 连接吃 ECONNREFUSED）。
 
 ## 致谢与许可
 
