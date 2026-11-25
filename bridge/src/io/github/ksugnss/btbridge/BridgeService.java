@@ -12,6 +12,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
+import android.util.Log;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
@@ -62,12 +63,15 @@ public class BridgeService extends Service {
             while (!Thread.currentThread().isInterrupted()) {
                 BluetoothSocket sock = null;
                 try {
-                    bt.cancelDiscovery();
+                    try { bt.cancelDiscovery(); } catch (SecurityException se) {
+                        Log.w("BtBridge", "cancelDiscovery denied (no BLUETOOTH_SCAN), continuing");
+                    }
                     BluetoothDevice dev = bt.getRemoteDevice(mac);
                     sock = dev.createRfcommSocketToServiceRecord(SPP);
                     sock.connect();
                     serve(sock);
                 } catch (Exception e) {
+                    Log.e("BtBridge", "bridge cycle failed: " + e);
                     if (sock != null) { try { sock.close(); } catch (Exception ignored) {} }
                     try { Thread.sleep(3000); } catch (InterruptedException x) { return; }
                 }
