@@ -86,8 +86,23 @@ bash build_bridge.sh     # dist/GnssBtBridge-*.apk（蓝牙SPP桥，可选，需
 |---|---|
 | `dist/gnss-usb-st-*.zip` | KSU 模块（半持久root，按钮一键激活） |
 | `dist/gnss-usb-*.zip` | KSU 模块（持久root，开机全自动） |
-| `dist/GnssBtBridge-*.apk` | 蓝牙 SPP 桥接 App（可选） |
+| `dist/GnssBtBridge-*.apk` | 蓝牙 SPP 桥接 + 模组控制 App（可选） |
 | `tools/diagnose.sh` | 上机一键自检（USB/服务/provider/avc/崩溃取证） |
+
+## 蓝牙 SPP 桥接（HyperOS 注意事项）
+
+配对 HC-04/HC-05 类串口模块后，App 内选设备 → 连接，即建立 `TCP 127.0.0.1:5000 ↔ SPP` 管道；
+HAL 侧配 `persist.vendor.gnss_usb.transport=tcp://127.0.0.1:5000` 即可把蓝牙 GNSS 当系统定位源。
+
+HyperOS 会把息屏后的 App 整体冻结（freezeUid reason=screen_off），桥接需一次性豁免（root）：
+
+```bash
+su -c 'dumpsys deviceidle whitelist +io.github.ksugnss.btbridge'
+su -c 'cmd appops set io.github.ksugnss.btbridge RUN_ANY_IN_BACKGROUND allow'
+```
+
+v2.2 起声明 `BLUETOOTH_SCAN(neverForLocation)`——Android 12+ 缺它时 `cancelDiscovery()` 抛
+SecurityException 会导致 SPP 永远连不上。
 
 ## 致谢与许可
 
