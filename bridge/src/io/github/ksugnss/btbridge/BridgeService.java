@@ -79,7 +79,9 @@ public class BridgeService extends Service {
         }
 
         private void serve(BluetoothSocket bt) throws Exception {
-            ServerSocket srv = new ServerSocket(5000, 4, InetAddress.getLoopbackAddress());
+            // bind IPv4 loopback explicitly: getLoopbackAddress() yields ::1 here,
+            // which refuses HAL's tcp://127.0.0.1:5000 connects
+            ServerSocket srv = new ServerSocket(5000, 4, InetAddress.getByName("127.0.0.1"));
             try {
                 while (bt.isConnected()) {
                     Socket cli = srv.accept();
