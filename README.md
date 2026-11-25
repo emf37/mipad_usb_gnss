@@ -89,20 +89,18 @@ bash build_bridge.sh     # dist/GnssBtBridge-*.apk（蓝牙SPP桥，可选，需
 | `dist/GnssBtBridge-*.apk` | 蓝牙 SPP 桥接 + 模组控制 App（可选） |
 | `tools/diagnose.sh` | 上机一键自检（USB/服务/provider/avc/崩溃取证） |
 
-## 蓝牙 SPP 桥接（HyperOS 注意事项）
+## 蓝牙 SPP 桥接与数据源热切换（v1.2+）
 
-配对 HC-04/HC-05 类串口模块后，App 内选设备 → 连接，即建立 `TCP 127.0.0.1:5000 ↔ SPP` 管道。
-HAL 的 source 配置在线程启动时读取一次，切换数据源需安全重启守护（已实测）：
+配对 HC-04/HC-05 类串口模块后，App 的模组按钮即"模组+链路"一步切换：
+
+- **中科微** → USB（PCAS 协议指令），等价 `SOURCE auto`
+- **博通BK** → 蓝牙（POL 协议 + 自动拉起 SPP 桥到所选设备），等价 `SOURCE tcp`
+
+热切换走 HAL 控制口（`127.0.0.1:5001`）的 `SOURCE` 命令：写运行时覆盖 + 持久属性并拆除
+当前 transport，reader 循环每轮重读配置自动重连——**无需重启守护、无需软重启**：
 
 ```bash
-# 切到蓝牙（默认 socket_addr=tcp://127.0.0.1:5000）
-su -c 'setprop persist.vendor.gnss_usb.source tcp'
-# 切回 USB
-su -c 'setprop persist.vendor.gnss_usb.source auto'
-# 生效：关定位总开关 → 重启守护 → 开定位（顺序不能乱，框架持 binder 时杀守护会死机）
-adb shell cmd location set-location-enabled false 0
-su -c 'sh /data/adb/gnss_usb/activate.sh stop && sh /data/adb/gnss_usb/activate.sh start'
-adb shell cmd location set-location-enabled true 0
+su -c 'echo "SOURCE tcp" | nc 127.0.0.1 5001'   # 或 auto / usb / tty / unix
 ```
 
 HyperOS 会把息屏后的 App 整体冻结（freezeUid reason=screen_off），桥接需一次性豁免（root）：
@@ -115,6 +113,10 @@ su -c 'cmd appops set io.github.ksugnss.btbridge RUN_ANY_IN_BACKGROUND allow'
 v2.2 起声明 `BLUETOOTH_SCAN(neverForLocation)`——Android 12+ 缺它时 `cancelDiscovery()` 抛
 SecurityException 会导致 SPP 永远连不上。v2.3 起显式绑定 `127.0.0.1`（绑 `::1` 会让 HAL 的
 IPv4 连接吃 ECONNREFUSED）。
+
+> 更新运行中的守护二进制：关定位总开关 → `activate.sh stop` → 替换 `bin/gnss_usb_hal`
+> （deploy 目录 `/data/adb/gnss_usb/` 与模块目录都要换，cp 后核对 md5）→ `activate.sh start`
+> → 开定位。切勿在框架持 binder 时直接杀守护（fg 死锁→watchdog 死机）。
 
 ## 致谢与许可
 
