@@ -72,8 +72,20 @@ public class BridgeService extends Service {
                 SystemClock.elapsedRealtime() + SELF_CHECK_MS, SELF_CHECK_MS, pi);
     }
 
+    private void cancelSelfCheck() {
+        AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        Intent i = new Intent(this, BridgeService.class);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+        am.cancel(PendingIntent.getService(this, 1, i, flags));
+    }
+
     @Override public void onDestroy() {
         if (worker != null) worker.interrupt();
+        // A clean stop (user closes the app / stopService) is intentional:
+        // drop the self-heal alarm so the bridge stays down. Hard kills
+        // (kill -9 / LMK) never reach here, so those still self-heal.
+        cancelSelfCheck();
         super.onDestroy();
     }
 

@@ -50,7 +50,7 @@ if [[ ! -f "$KEYSTORE" ]]; then
 fi
 java -cp "$BT/lib/apksigner.jar" com.android.apksigner.ApkSignerTool sign \
   --ks "$(cygpath -w "$KEYSTORE")" --ks-pass pass:android --key-pass pass:android \
-  --out "$(cygpath -w "$ROOT/dist/GnssBtBridge-v2.7.apk")" \
+  --out "$(cygpath -w "$ROOT/dist/GnssBtBridge-v2.8.apk")" \
   "$(cygpath -w "$BUILD/aligned.apk")"
 
-ls -la "$ROOT/dist/GnssBtBridge-v2.7.apk"
+ls -la "$ROOT/dist/GnssBtBridge-v2.8.apk"

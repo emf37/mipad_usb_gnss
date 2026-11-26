@@ -89,7 +89,7 @@ public class MainActivity extends Activity
         int id = v.getId();
         if (id == R.id.btnAtgm) {
             module = 1;
-            prefs.edit().putInt("module", module).putBoolean("auto_bt", false).apply();
+            prefs.edit().putInt("module", module).apply();
             mark();
             switchSource("auto");
             lg("mod: ATGM (中科微) → 链路切 USB");
@@ -97,7 +97,7 @@ public class MainActivity extends Activity
         }
         if (id == R.id.btnBk) {
             module = 2;
-            prefs.edit().putInt("module", module).putBoolean("auto_bt", true).apply();
+            prefs.edit().putInt("module", module).apply();
             mark();
             if (btMac.length() == 0) {
                 lg("mod: BK (博通) 已选，但未选蓝牙设备——先选设备再切换");
@@ -235,7 +235,6 @@ public class MainActivity extends Activity
         }
         Intent it = new Intent(this, BridgeService.class);
         it.putExtra("mac", btMac);
-        prefs.edit().putBoolean("auto_bt", true).apply();
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(it);
         else startService(it);
         lg("BT bridge: " + btMac);
