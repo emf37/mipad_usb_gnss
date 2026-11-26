@@ -37,7 +37,12 @@ public class BridgeService extends Service {
 
     @Override public int onStartCommand(Intent it, int f, int id) {
         String mac = it != null ? it.getStringExtra("mac") : null;
-        if (mac != null && worker == null) {
+        if (mac == null) {
+            // START_STICKY restart after a system kill delivers a null intent:
+            // fall back to the remembered device so the bridge self-heals.
+            mac = getSharedPreferences("state", MODE_PRIVATE).getString("bt_mac", "");
+        }
+        if (mac != null && mac.length() > 0 && worker == null) {
             worker = new Thread(new BtLoop(this, mac), "bt");
             worker.start();
         }
