@@ -1,8 +1,10 @@
 package io.github.ksugnss.btbridge;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -12,6 +14,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.util.Log;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -22,10 +25,12 @@ import java.util.UUID;
 
 public class BridgeService extends Service {
     private static final UUID SPP = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    private static final long SELF_CHECK_MS = 90000L;
     private Thread worker;
 
     @Override public void onCreate() {
         super.onCreate();
+        scheduleSelfCheck();
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26)
             nm.createNotificationChannel(new NotificationChannel("bt", "Bridge", NotificationManager.IMPORTANCE_LOW));
@@ -50,6 +55,22 @@ public class BridgeService extends Service {
     }
 
     @Override public IBinder onBind(Intent i) { return null; }
+
+    /**
+     * HyperOS does not honor START_STICKY restarts after a hard kill, so keep a
+     * wakeup alarm that re-starts this service (null intent -> prefs fallback
+     * path) whenever it vanished. No-op when already running. Battery-exempt
+     * apps are allowed to start a foreground service from the alarm.
+     */
+    private void scheduleSelfCheck() {
+        AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        Intent i = new Intent(this, BridgeService.class);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent pi = PendingIntent.getService(this, 1, i, flags);
+        am.setInexactRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                SystemClock.elapsedRealtime() + SELF_CHECK_MS, SELF_CHECK_MS, pi);
+    }
 
     @Override public void onDestroy() {
         if (worker != null) worker.interrupt();
